@@ -190,7 +190,7 @@ Dự án SmartFee đã được hoàn thành 100% theo đúng yêu cầu trong f
 | POST | /api/invoices/admin/calc-fee | ✅ | Calculate fees |
 | POST | /api/invoices/{id}/mark-paid | ✅ | Mark as paid |
 | POST | /api/payments | ✅ | Initiate payment |
-| POST | /api/payments/webhook | ❌ | Payment callback |
+| POST | /api/payments/webhook | ✅ | Payment callback (HMAC verification, idempotency enforced) |
 | POST | /api/payments/retry | ✅ | Retry failed payments |
 
 ### ✅ Query Parameters

@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    env:
+      PAYMENT_WEBHOOK_SECRET: ${{ secrets.PAYMENT_WEBHOOK_SECRET }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Ensure webhook secret is provided
+        run: |
+          if [ -z "${PAYMENT_WEBHOOK_SECRET}" ]; then echo "Missing PAYMENT_WEBHOOK_SECRET secret — set it in repository secrets"; exit 1; fi
+      - name: Build and run tests
+        run: mvn -B -Dpayment.webhook.secret=${PAYMENT_WEBHOOK_SECRET} test

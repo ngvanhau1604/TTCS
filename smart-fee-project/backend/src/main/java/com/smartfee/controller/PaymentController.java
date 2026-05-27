@@ -124,4 +124,5 @@ public class PaymentController {
     public ResponseEntity<?> getByInvoice(@PathVariable Integer invoiceId) {
         return ResponseEntity.ok(paymentService.findPaymentsByInvoice(invoiceId));
     }
+
 }

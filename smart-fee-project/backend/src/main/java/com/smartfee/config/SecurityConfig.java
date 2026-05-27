@@ -48,6 +48,8 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/**").permitAll()
+                        // Webhook endpoint is open (no JWT) - verification enforced by PaymentService
+                        // via HMAC secret
                         .requestMatchers("/api/payments/webhook").permitAll()
                         .requestMatchers("/api/invoices/admin/**").hasAnyRole("ADMIN", "ACCOUNTANT")
                         .requestMatchers("/api/payments/retry").hasAnyRole("ADMIN", "ACCOUNTANT")

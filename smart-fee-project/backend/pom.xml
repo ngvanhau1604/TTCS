@@ -12,7 +12,7 @@
     <!-- lookup parent from repository -->
   </parent>
   <properties>
-    <java.version>25</java.version>
+    <java.version>17</java.version>
   </properties>
   <dependencies>
     <!-- web, jpa, security, mysql -->
@@ -74,7 +74,7 @@
         <artifactId>maven-compiler-plugin</artifactId>
         <version>3.11.0</version>
         <configuration>
-          <release>25</release>
+          <release>17</release>
         </configuration>
       </plugin>
       <plugin>

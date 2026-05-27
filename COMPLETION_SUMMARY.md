@@ -61,7 +61,8 @@ spring.datasource.password=your_mysql_password
 ```bash
 cd smart-fee-project/backend
 mvn clean install
-mvn spring-boot:run
+# Run with webhook secret (required):
+mvn spring-boot:run -Dpayment.webhook.secret="<your_webhook_secret>"
 ```
 
 Server chạy tại: **http://localhost:8080**
@@ -77,7 +78,7 @@ Server chạy tại: **http://localhost:8080**
 | GET | /api/invoices | Xem hóa đơn | ✅ |
 | POST | /api/invoices/admin/calc-fee | Tính phí tự động | ✅ |
 | POST | /api/payments | Thanh toán | ✅ |
-| POST | /api/payments/webhook | Callback từ gateway | ❌ |
+| POST | /api/payments/webhook | Callback từ gateway | ✅ |
 | GET | /api/invoices/{id} | Chi tiết hóa đơn | ✅ |
 | PUT | /api/invoices/{id} | Cập nhật hóa đơn | ✅ |
 | POST | /api/payments/retry | Thử lại thanh toán | ✅ |

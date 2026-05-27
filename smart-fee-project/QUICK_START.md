@@ -49,7 +49,10 @@ cd smart-fee-project\backend
 mvn clean install
 
 # Chạy ứng dụng
-mvn spring-boot:run
+# Chạy ứng dụng (bắt buộc cung cấp webhook secret cho xử lý callback)
+# Ví dụ:
+# mvn spring-boot:run -Dpayment.webhook.secret="test_secret"
+mvn spring-boot:run -Dpayment.webhook.secret="<your_webhook_secret>"
 ```
 
 Server sẽ khởi động tại: **http://localhost:8080**

@@ -14,9 +14,12 @@ import java.util.Optional;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Service
 public class PaymentService {
+    private static final Logger logger = LoggerFactory.getLogger(PaymentService.class);
     @Autowired
     private InvoiceRepository invoiceRepository;
 
@@ -81,11 +84,23 @@ public class PaymentService {
      * Cần xác minh chữ ký (Signature) để chắc chắn request từ gateway hợp lệ.
      */
     public boolean handlePaymentWebhook(String invoiceId, String transactionId, String signature) {
+        logger.debug("handlePaymentWebhook called: invoiceId={}, transactionId={}, signature={}", invoiceId,
+                transactionId, signature);
+
         if (invoiceId == null || invoiceId.isBlank() || transactionId == null || transactionId.isBlank()) {
+            logger.warn("Invalid webhook payload: missing invoiceId or transactionId");
             return false;
         }
 
-        if (signature == null || signature.isBlank() || !verifySignature(transactionId, signature)) {
+        if (signature == null || signature.isBlank()) {
+            logger.warn("Invalid webhook payload: missing signature for transaction {}", transactionId);
+            return false;
+        }
+
+        boolean ok = verifySignature(transactionId, signature);
+        if (!ok) {
+            logger.warn("Signature verification failed for transaction {}. Provided signature: {}", transactionId,
+                    signature);
             return false;
         }
 
@@ -135,9 +150,28 @@ public class PaymentService {
      * Mỗi gateway (VNPay, Momo) có cách xác minh khác nhau.
      */
     private boolean verifySignature(String data, String signature) {
-        // Placeholder verification: production cần thay bằng thuật toán checksum của
-        // cổng thanh toán.
-        return data != null && !data.isBlank() && signature != null && !signature.isBlank();
+        // Use HMAC-SHA256 verification against a configured secret.
+        try {
+            // Strict mode: require explicit system property `-Dpayment.webhook.secret`.
+            String secret = System.getProperty("payment.webhook.secret");
+            if (secret == null || secret.isBlank()) {
+                logger.warn("payment.webhook.secret system property is not set; rejecting webhook (strict mode)");
+                return false;
+            }
+
+            javax.crypto.Mac mac = javax.crypto.Mac.getInstance("HmacSHA256");
+            javax.crypto.spec.SecretKeySpec keySpec = new javax.crypto.spec.SecretKeySpec(
+                    secret.getBytes(java.nio.charset.StandardCharsets.UTF_8), "HmacSHA256");
+            mac.init(keySpec);
+            byte[] rawHmac = mac.doFinal(data.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            String expected = java.util.Base64.getEncoder().encodeToString(rawHmac);
+            logger.debug("verifySignature: data={}, expectedSignaturePresent={}, providedSignaturePresent={}", data,
+                    expected != null, signature != null);
+            return expected.equals(signature);
+        } catch (Exception ex) {
+            logger.error("Exception while verifying signature", ex);
+            return false;
+        }
     }
 
     /**
