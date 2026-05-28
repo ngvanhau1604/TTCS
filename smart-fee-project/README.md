@@ -94,13 +94,15 @@ logging.level.org.springframework=INFO
 ```bash
 # Sử dụng Maven
 mvn clean install
-mvn spring-boot:run
+mvn spring-boot:run -Dpayment.webhook.secret="<your_webhook_secret>"
 
 # Hoặc chạy trực tiếp từ JAR
-java -jar target/smart-fee-project-1.0.0.jar
+java -Dpayment.webhook.secret="<your_webhook_secret>" -jar target/smart-fee-project-1.0.0.jar
 ```
 
 Server sẽ chạy trên `http://localhost:8080`
+
+> Note: The backend requires a payment webhook secret for processing payment gateway callbacks in strict mode. Set `-Dpayment.webhook.secret` when running the service (or provide via environment/secret manager). Webhook verification uses HMAC-SHA256(secret, transactionRef) and the service enforces idempotency for duplicate transactionRef.
 
 ## API Endpoints
 
@@ -129,11 +131,15 @@ Request:
 {
   "username": "newuser",
   "password": "password123",
-  "role": "RESIDENT"
+  "fullName": "Nguyen Van A",
+  "phoneNumber": "0909123456",
+  "apartmentCode": "101"
 }
 
 Response: User object
 ```
+
+Tài khoản đăng ký mới của cư dân sẽ ở trạng thái chờ duyệt. Admin phải xác nhận thì tài khoản mới được phép đăng nhập.
 
 ### Invoices
 
@@ -205,10 +211,12 @@ Authorization: Bearer <token>
 ```
 
 ### Roles
-- **ADMIN**: Quản lý toàn bộ hệ thống
-- **RESIDENT**: Cư dân - xem hóa đơn, thanh toán
-- **ACCOUNTANT**: Kế toán - quản lý hóa đơn
-- **STAFF**: Nhân viên - hỗ trợ
+- **ADMIN**: Quản lý toàn bộ hệ thống, tạo tài khoản, xem tất cả dữ liệu, cấu hình và vận hành các chức năng quản trị.
+- **RESIDENT**: Cư dân, chỉ xem dữ liệu của chính mình, tra cứu hóa đơn, thanh toán, gửi yêu cầu hỗ trợ/khiếu nại.
+- **ACCOUNTANT**: Kế toán, quản lý và đối soát hóa đơn, gạch nợ, theo dõi trạng thái thanh toán và báo cáo tài chính.
+- **STAFF**: Nhân viên BQL, nhập chỉ số, xử lý yêu cầu nội bộ, hỗ trợ vận hành và cập nhật dữ liệu căn hộ.
+
+> Mỗi tài khoản chỉ có một role duy nhất. Các tài khoản ADMIN, ACCOUNTANT và STAFF được tạo sẵn hoặc do admin cấp. Người dùng tự đăng ký chỉ tạo yêu cầu cư dân và phải chờ admin duyệt.
 
 ## Định dạng Response Lỗi
 
@@ -313,6 +321,46 @@ java -jar smart-fee-project-1.0.0.jar \
 - [ ] Analytics Dashboard
 - [ ] Audit Logging
 - [ ] Docker Containerization
+
+## Docker & Docker Compose
+
+Hướng dẫn chạy ứng dụng bằng Docker (backend + frontend + MySQL) dùng `docker compose`.
+
+1) Tạo file `.env` trong thư mục gốc (`smart-fee-project`) với nội dung tối thiểu:
+
+```
+PAYMENT_WEBHOOK_SECRET=replace_with_strong_secret_here
+MYSQL_ROOT_PASSWORD=rootpass
+MYSQL_DATABASE=smartfee_db
+MYSQL_USER=smartfee
+MYSQL_PASSWORD=smartfee
+```
+
+2) Build và up toàn bộ stack:
+
+```powershell
+# Windows PowerShell
+# (từ thư mục smart-fee-project)
+$env:PAYMENT_WEBHOOK_SECRET='your_strong_secret_here'
+docker compose up --build
+```
+
+3) Gõ `http://localhost:3000` để mở frontend; backend API có sẵn tại `http://localhost:8080/api`.
+
+Ghi chú bảo mật:
+- `PAYMENT_WEBHOOK_SECRET` là bắt buộc (strict mode). Docker entrypoint sẽ từ chối khởi động nếu biến này không được thiết lập.
+- Trên môi trường production, lưu `PAYMENT_WEBHOOK_SECRET` và các bí mật DB trong secret manager (GitHub Secrets, Azure Key Vault, etc.) thay vì trong `.env` plaintext.
+
+Mẹo dev nhanh:
+- Chỉ muốn khởi backend (không dùng Docker): build bằng Maven và chạy:
+
+```powershell
+mvn -DskipTests package
+java -Dpayment.webhook.secret="your_secret" -jar backend/target/*smart-fee-backend*.jar
+```
+
+CI integration:
+- Bạn có thể thêm bước để build Docker images trong CI và push vào registry (DockerHub/GitHub Container Registry). Trong workflow CI, không lưu secret vào repo; dùng repository secrets.
 
 ## Hỗ trợ
 

@@ -23,6 +23,10 @@ public class CustomUserDetailsService implements UserDetailsService {
         User user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new UsernameNotFoundException("User not found: " + username));
 
+        if (user.getApprovalStatus() != null && !"APPROVED".equalsIgnoreCase(user.getApprovalStatus())) {
+            throw new UsernameNotFoundException("User not approved: " + username);
+        }
+
         return org.springframework.security.core.userdetails.User.builder()
                 .username(user.getUsername())
                 .password(user.getPassword())

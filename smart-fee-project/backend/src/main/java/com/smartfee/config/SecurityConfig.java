@@ -47,7 +47,11 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/auth/**").permitAll()
+                        .requestMatchers("/api/auth/login", "/api/auth/register", "/api/auth/register/resident")
+                        .permitAll()
+                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
+                        // Webhook endpoint is open (no JWT) - verification enforced by PaymentService
+                        // via HMAC secret
                         .requestMatchers("/api/payments/webhook").permitAll()
                         .requestMatchers("/api/invoices/admin/**").hasAnyRole("ADMIN", "ACCOUNTANT")
                         .requestMatchers("/api/payments/retry").hasAnyRole("ADMIN", "ACCOUNTANT")

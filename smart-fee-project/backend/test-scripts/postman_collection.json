@@ -1,0 +1,83 @@
+{
+  "info": {
+    "name": "SmartFee E2E Collection",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Auth - Login",
+      "request": {
+        "method": "POST",
+        "header": [ { "key": "Content-Type", "value": "application/json" } ],
+        "body": { "mode": "raw", "raw": "{ \"username\": \"qa_user_1\", \"password\": \"QaUser123!\" }" },
+        "url": { "raw": "{{base_url}}/auth/login", "host": ["{{base_url}}"], "path": ["auth","login"] }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "var json = pm.response.json();",
+              "pm.environment.set('auth_token', json.token);"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Invoices - List",
+      "request": {
+        "method": "GET",
+        "header": [ { "key": "Authorization", "value": "Bearer {{auth_token}}" } ],
+        "url": { "raw": "{{base_url}}/invoices", "host": ["{{base_url}}"], "path": ["invoices"] }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": { "exec": [ "var arr = pm.response.json(); if (arr.length>0) pm.environment.set('invoiceId', arr[0].invoiceId);" ], "type": "text/javascript" }
+        }
+      ]
+    },
+    {
+      "name": "Payments - Initiate",
+      "request": {
+        "method": "POST",
+        "header": [ { "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{auth_token}}" } ],
+        "body": { "mode": "raw", "raw": "{ \"invoiceId\": \"{{invoiceId}}\", \"method\": \"VNPAY\" }" },
+        "url": { "raw": "{{base_url}}/payments", "host": ["{{base_url}}"], "path": ["payments"] }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": { "exec": [ "var j=pm.response.json(); pm.environment.set('transactionRef', j.transactionRef);" ], "type": "text/javascript" }
+        }
+      ]
+    },
+    {
+      "name": "Payments - Webhook (simulate)",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              "// compute HMAC-SHA256(transactionRef) and set base64 signature",
+              "var tx = pm.environment.get('transactionRef');",
+              "var secret = pm.environment.get('webhook_secret');",
+              "var hmac = CryptoJS.HmacSHA256(tx, secret);",
+              "var sig = CryptoJS.enc.Base64.stringify(hmac);",
+              "pm.environment.set('computed_signature', sig);"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [ { "key": "Content-Type", "value": "application/json" } ],
+        "body": { "mode": "raw", "raw": "{ \"invoiceId\": \"{{invoiceId}}\", \"transactionId\": \"{{transactionRef}}\", \"signature\": \"{{computed_signature}}\" }" },
+        "url": { "raw": "{{base_url}}/payments/webhook", "host": ["{{base_url}}"], "path": ["payments","webhook"] }
+      }
+    }
+  ]
+}

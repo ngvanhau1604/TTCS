@@ -172,8 +172,8 @@ public class InvoiceService {
 
         for (Apartment apt : apartments) {
             // Kiểm tra nếu đã tạo hóa đơn cho tháng này
-            if (invoiceRepository.findByApartment_ApartmentIdAndBillingMonth(
-                    apt.getApartmentId(), billingMonth).isPresent()) {
+            if (invoiceRepository.existsByApartment_ApartmentIdAndBillingMonth(
+                    apt.getApartmentId(), billingMonth)) {
                 continue;
             }
 

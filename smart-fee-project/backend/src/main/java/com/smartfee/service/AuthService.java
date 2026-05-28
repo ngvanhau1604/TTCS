@@ -1,7 +1,10 @@
 package com.smartfee.service;
 
+import com.smartfee.dto.ResidentRegistrationRequest;
+import com.smartfee.model.Apartment;
 import com.smartfee.model.User;
 import com.smartfee.exception.InvalidDataException;
+import com.smartfee.repository.ApartmentRepository;
 import com.smartfee.repository.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,9 +18,16 @@ import java.util.Set;
 @Service
 public class AuthService {
     private static final Logger logger = LoggerFactory.getLogger(AuthService.class);
+    private static final String DEFAULT_ROLE = "RESIDENT";
+    private static final String STATUS_PENDING = "PENDING";
+    private static final String STATUS_APPROVED = "APPROVED";
+    private static final String STATUS_REJECTED = "REJECTED";
 
     @Autowired
     private UserRepository userRepository;
+
+    @Autowired
+    private ApartmentRepository apartmentRepository;
 
     @Autowired
     private BCryptPasswordEncoder passwordEncoder;
@@ -35,35 +45,104 @@ public class AuthService {
         User foundUser = user.get();
         logger.debug("Found user: {} with role: {}", foundUser.getUsername(), foundUser.getRole());
 
+        if (DEFAULT_ROLE.equalsIgnoreCase(foundUser.getRole())) {
+            if (!STATUS_APPROVED.equalsIgnoreCase(foundUser.getApprovalStatus())) {
+                logger.warn("User {} is not approved yet: {}", foundUser.getUsername(), foundUser.getApprovalStatus());
+                return Optional.empty();
+            }
+        } else if (foundUser.getApprovalStatus() == null || foundUser.getApprovalStatus().isBlank()) {
+            logger.debug("User {} has no approval status, treating system account role {} as approved",
+                    foundUser.getUsername(), foundUser.getRole());
+        }
+
         boolean matches = passwordEncoder.matches(rawPassword, foundUser.getPassword());
         logger.debug("Password match result: {}", matches);
 
         return matches ? Optional.of(foundUser) : Optional.empty();
     }
 
-    public User register(User user) {
-        if (user.getUsername() == null || user.getUsername().isBlank()) {
+    public User registerResident(ResidentRegistrationRequest request) {
+        if (request.getUsername() == null || request.getUsername().isBlank()) {
             throw new InvalidDataException("username là bắt buộc");
         }
-        if (user.getPassword() == null || user.getPassword().isBlank()) {
+        if (request.getPassword() == null || request.getPassword().isBlank()) {
             throw new InvalidDataException("password là bắt buộc");
         }
+        if (request.getFullName() == null || request.getFullName().isBlank()) {
+            throw new InvalidDataException("fullName là bắt buộc");
+        }
+        if (request.getPhoneNumber() == null || request.getPhoneNumber().isBlank()) {
+            throw new InvalidDataException("phoneNumber là bắt buộc");
+        }
+        if (request.getApartmentCode() == null || request.getApartmentCode().isBlank()) {
+            throw new InvalidDataException("apartmentCode là bắt buộc");
+        }
 
-        String normalizedUsername = user.getUsername().trim();
+        String normalizedUsername = request.getUsername().trim();
         if (userRepository.findByUsername(normalizedUsername).isPresent()) {
             throw new InvalidDataException("username đã tồn tại");
         }
 
-        String role = user.getRole() == null || user.getRole().isBlank()
-                ? "RESIDENT"
-                : user.getRole().trim().toUpperCase();
-        if (!ALLOWED_ROLES.contains(role)) {
-            throw new InvalidDataException("role không hợp lệ");
+        String normalizedApartmentCode = request.getApartmentCode().trim().toUpperCase();
+        Apartment apartment = apartmentRepository.findByRoomNumber(normalizedApartmentCode)
+                .orElseThrow(() -> new InvalidDataException("mã căn hộ không tồn tại"));
+
+        if (apartment.getOwner() != null) {
+            throw new InvalidDataException("căn hộ đã có cư dân được gán");
         }
 
+        User user = new User();
         user.setUsername(normalizedUsername);
-        user.setRole(role);
-        user.setPassword(passwordEncoder.encode(user.getPassword()));
+        user.setRole(DEFAULT_ROLE);
+        user.setPassword(passwordEncoder.encode(request.getPassword()));
+        user.setFullName(request.getFullName().trim());
+        user.setPhoneNumber(request.getPhoneNumber().trim());
+        user.setApartmentCode(normalizedApartmentCode);
+        user.setApprovalStatus(STATUS_PENDING);
         return userRepository.save(user);
+    }
+
+    public java.util.List<User> getPendingResidentRegistrations() {
+        return userRepository.findByApprovalStatusOrderByUserIdAsc(STATUS_PENDING);
+    }
+
+    public User approveResidentRegistration(Integer userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new InvalidDataException("user không tồn tại"));
+        if (!DEFAULT_ROLE.equalsIgnoreCase(user.getRole())) {
+            throw new InvalidDataException("chỉ duyệt được tài khoản cư dân");
+        }
+        if (!STATUS_PENDING.equalsIgnoreCase(user.getApprovalStatus())) {
+            throw new InvalidDataException("tài khoản không ở trạng thái chờ duyệt");
+        }
+
+        Apartment apartment = apartmentRepository.findByRoomNumber(user.getApartmentCode())
+                .orElseThrow(() -> new InvalidDataException("mã căn hộ không tồn tại"));
+        if (apartment.getOwner() != null && !apartment.getOwner().getUserId().equals(user.getUserId())) {
+            throw new InvalidDataException("căn hộ đã có chủ sở hữu khác");
+        }
+
+        user.setApprovalStatus(STATUS_APPROVED);
+        User saved = userRepository.save(user);
+        apartment.setOwner(saved);
+        apartmentRepository.save(apartment);
+        return saved;
+    }
+
+    public User rejectResidentRegistration(Integer userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new InvalidDataException("user không tồn tại"));
+        if (!STATUS_PENDING.equalsIgnoreCase(user.getApprovalStatus())) {
+            throw new InvalidDataException("tài khoản không ở trạng thái chờ duyệt");
+        }
+        user.setApprovalStatus(STATUS_REJECTED);
+        return userRepository.save(user);
+    }
+
+    private String normalizeRole(String rawRole) {
+        if (rawRole == null || rawRole.isBlank()) {
+            return DEFAULT_ROLE;
+        }
+        return rawRole.trim().toUpperCase();
     }
 }

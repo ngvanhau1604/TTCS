@@ -11,7 +11,7 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Integer> {
 
     List<Invoice> findByStatus(String status);
 
-    Optional<Invoice> findByApartment_ApartmentIdAndBillingMonth(Integer apartmentId, LocalDate billingMonth);
+    boolean existsByApartment_ApartmentIdAndBillingMonth(Integer apartmentId, LocalDate billingMonth);
 
     List<Invoice> findByBillingMonth(LocalDate month);
 }

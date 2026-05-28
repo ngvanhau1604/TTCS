@@ -7,7 +7,10 @@ Hướng dẫn chi tiết để test các API endpoints của SmartFee.
 1. **Khởi động Server**
 ```bash
 cd smart-fee-project/backend
-mvn spring-boot:run
+mvn clean install
+# Run with payment webhook secret (required for callback verification):
+# mvn spring-boot:run -Dpayment.webhook.secret="test_secret"
+mvn spring-boot:run -Dpayment.webhook.secret="<your_webhook_secret>"
 ```
 Server sẽ chạy ở: `http://localhost:8080`
 
@@ -160,9 +163,20 @@ curl -X POST http://localhost:8080/api/payments/webhook \
   -d '{
     "invoiceId": "1",
     "transactionId": "VNP20231025123456",
-    "signature": "abc123def456"
+    "signature": "<computed_base64_hmac>"
   }'
 ```
+
+Note: The backend requires a pre-shared webhook secret. To compute the HMAC-SHA256 signature in bash:
+
+```bash
+TX="VNP20231025123456"
+SECRET="test_secret"
+SIGNATURE=$(printf "%s" "$TX" | openssl dgst -sha256 -hmac "$SECRET" -binary | openssl base64)
+echo $SIGNATURE
+```
+
+Use the printed base64 value as `signature` in the webhook payload.
 
 ### 3.3 Thử lại thanh toán
 

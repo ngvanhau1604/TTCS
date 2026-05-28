@@ -25,6 +25,30 @@ type Invoice = {
   parkingFee?: number;
 };
 
+type PaymentInitResponse = {
+  success: boolean;
+  paymentUrl?: string;
+  transactionRef?: string;
+  method?: string;
+  amount?: number;
+  message?: string;
+};
+
+type MeterReadingSaveResponse = {
+  success: boolean;
+  meterReadingId: number;
+  monthYear: string;
+  electricUsage: number;
+  waterUsage: number;
+};
+
+type ServiceRequestSaveResponse = {
+  success: boolean;
+  requestId: number;
+  status: string;
+  requestType: string;
+};
+
 type MeterReading = {
   meterReadingId: number;
   apartment?: { apartmentId: number; roomNumber: string };
@@ -51,78 +75,6 @@ type NotificationLog = {
   status: string;
   createdAt?: string;
 };
-
-const mockInvoices: Invoice[] = [
-  {
-    invoiceId: 101,
-    billingMonth: '2026-05-01',
-    dueDate: '2026-05-15',
-    totalAmount: 2450000,
-    status: 'PENDING',
-    apartment: { apartmentId: 1, roomNumber: 'A-1208', area: 72, occupancyStatus: 'OCCUPIED' },
-    electricFee: 860000,
-    waterFee: 180000,
-    managementFee: 3600000,
-    parkingFee: 180000,
-  },
-  {
-    invoiceId: 102,
-    billingMonth: '2026-04-01',
-    dueDate: '2026-04-15',
-    totalAmount: 2380000,
-    status: 'PAID',
-    apartment: { apartmentId: 1, roomNumber: 'A-1208', area: 72, occupancyStatus: 'OCCUPIED' },
-    electricFee: 790000,
-    waterFee: 155000,
-    managementFee: 3600000,
-    parkingFee: 180000,
-  },
-];
-
-const mockReadings: MeterReading[] = [
-  {
-    meterReadingId: 1,
-    apartment: { apartmentId: 1, roomNumber: 'A-1208' },
-    monthYear: '2026-05',
-    elecOld: 1240,
-    elecNew: 1712,
-    waterOld: 92,
-    waterNew: 118,
-  },
-  {
-    meterReadingId: 2,
-    apartment: { apartmentId: 1, roomNumber: 'A-1208' },
-    monthYear: '2026-04',
-    elecOld: 1098,
-    elecNew: 1240,
-    waterOld: 86,
-    waterNew: 92,
-  },
-];
-
-const mockRequests: ServiceRequest[] = [
-  { requestId: 55, requestType: 'SERVICE', title: 'Đăng ký thêm 1 xe máy', status: 'PENDING', createdAt: '2026-05-23T08:30:00' },
-  { requestId: 56, requestType: 'COMPLAINT', title: 'Sai số chỉ số nước', status: 'APPROVED', createdAt: '2026-05-20T09:10:00' },
-];
-
-const mockNotifications: NotificationLog[] = [
-  {
-    notificationId: 88,
-    title: 'Nhắc nợ hóa đơn tháng 5',
-    message: 'Hóa đơn tháng 5 đã sẵn sàng và đang chờ thanh toán.',
-    channel: 'EMAIL',
-    status: 'SENT',
-    createdAt: '2026-05-24T08:00:00',
-  },
-  {
-    notificationId: 89,
-    title: 'Thanh toán thành công',
-    message: 'Hóa đơn tháng 4 đã được gạch nợ tự động.',
-    channel: 'APP',
-    status: 'SENT',
-    createdAt: '2026-05-23T10:11:00',
-  },
-];
 
 const apiBase = '';
 
@@ -172,11 +124,10 @@ export default function App() {
   const [loginForm, setLoginForm] = useState({ username: 'admin', password: 'password123' });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [activeView, setActiveView] = useState<'resident' | 'staff' | 'accounting'>('resident');
-  const [invoices, setInvoices] = useState<Invoice[]>(mockInvoices);
-  const [readings, setReadings] = useState<MeterReading[]>(mockReadings);
-  const [requests, setRequests] = useState<ServiceRequest[]>(mockRequests);
-  const [notifications, setNotifications] = useState<NotificationLog[]>(mockNotifications);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [readings, setReadings] = useState<MeterReading[]>([]);
+  const [requests, setRequests] = useState<ServiceRequest[]>([]);
+  const [notifications, setNotifications] = useState<NotificationLog[]>([]);
   const [serviceForm, setServiceForm] = useState({ apartmentId: '1', requestType: 'SERVICE', title: '', content: '' });
   const [meterForm, setMeterForm] = useState({ apartmentId: '1', monthYear: '2026-05', elecOld: '1240', elecNew: '1712', waterOld: '92', waterNew: '118' });
 
@@ -185,27 +136,61 @@ export default function App() {
     localStorage.setItem('smartfee-session', JSON.stringify(session));
   }, [session]);
 
-  useEffect(() => {
+  async function loadInvoicesAndNotifications() {
     if (!session) return;
 
-    const load = async () => {
-      try {
-        const [invoiceList, notificationList] = await Promise.all([
-          apiFetch<Invoice[]>('/api/invoices', undefined, session.token),
-          apiFetch<NotificationLog[]>('/api/notifications/me', undefined, session.token),
-        ]);
-        setInvoices(invoiceList.length ? invoiceList : mockInvoices);
-        setNotifications(notificationList.length ? notificationList : mockNotifications);
-      } catch {
-        setInvoices(mockInvoices);
-        setNotifications(mockNotifications);
-      }
-    };
+    try {
+      const [invoiceList, notificationList] = await Promise.all([
+        apiFetch<Invoice[]>('/api/invoices', undefined, session.token),
+        apiFetch<NotificationLog[]>('/api/notifications/me', undefined, session.token),
+      ]);
+      setInvoices(invoiceList);
+      setNotifications(notificationList);
+    } catch {
+      setInvoices([]);
+      setNotifications([]);
+      setError('Không tải được dữ liệu từ backend. Kiểm tra server và database rồi đăng nhập lại.');
+    }
+  }
 
-    void load();
+  async function loadMeterReadings(apartmentId: number) {
+    if (!session || !apartmentId) return;
+
+    try {
+      const list = await apiFetch<MeterReading[]>(`/api/meter-readings/apartment/${apartmentId}`, undefined, session.token);
+      setReadings(list);
+    } catch {
+      setReadings([]);
+      setError('Không tải được lịch sử chỉ số từ backend.');
+    }
+  }
+
+  async function loadServiceRequests() {
+    if (!session) return;
+
+    try {
+      const list = await apiFetch<ServiceRequest[]>('/api/service-requests?status=PENDING', undefined, session.token);
+      setRequests(list);
+    } catch {
+      setRequests([]);
+      setError('Không tải được danh sách yêu cầu từ backend.');
+    }
+  }
+
+  useEffect(() => {
+    if (!session) return;
+    void loadInvoicesAndNotifications();
+    void loadServiceRequests();
   }, [session]);
 
   const currentInvoice = invoices[0];
+
+  const currentApartmentId = currentInvoice?.apartment?.apartmentId;
+
+  useEffect(() => {
+    if (!session || !currentApartmentId) return;
+    void loadMeterReadings(currentApartmentId);
+  }, [session, currentApartmentId]);
 
   const stats = useMemo(() => {
     const total = invoices.reduce((sum, item) => sum + (item.totalAmount || 0), 0);
@@ -224,10 +209,9 @@ export default function App() {
         body: JSON.stringify(loginForm),
       });
       setSession(result);
-      setActiveView(result.role === 'RESIDENT' ? 'resident' : result.role === 'ACCOUNTANT' ? 'accounting' : 'staff');
     } catch {
-      setSession({ token: 'mock-token', role: 'ADMIN', userId: 1, username: loginForm.username });
-      setError('Không thể kết nối backend, đang chạy bằng dữ liệu mô phỏng.');
+      setSession(null);
+      setError('Không thể đăng nhập vào backend. Kiểm tra lại server, database hoặc tài khoản.');
     } finally {
       setBusy(false);
     }
@@ -247,8 +231,9 @@ export default function App() {
         body: JSON.stringify({ month: 5, year: 2026 }),
       }, session?.token);
       setError('Đã kích hoạt tính phí tháng 5/2026.');
+      await loadInvoicesAndNotifications();
     } catch {
-      setError('Không gọi được backend, hiển thị dữ liệu mô phỏng.');
+      setError('Không gọi được backend để tính phí.');
     } finally {
       setBusy(false);
     }
@@ -258,9 +243,9 @@ export default function App() {
     setBusy(true);
     try {
       await apiFetch(`/api/invoices/${invoiceId}/mark-paid`, { method: 'POST' }, session?.token);
-      setInvoices((previous) => previous.map((item) => (item.invoiceId === invoiceId ? { ...item, status: 'PAID' } : item)));
+      await loadInvoicesAndNotifications();
     } catch {
-      setInvoices((previous) => previous.map((item) => (item.invoiceId === invoiceId ? { ...item, status: 'PAID' } : item)));
+      setError('Không gạch nợ được trên backend.');
     } finally {
       setBusy(false);
     }
@@ -269,14 +254,17 @@ export default function App() {
   async function payNow(invoiceId: number) {
     setBusy(true);
     try {
-      const result = await apiFetch<{ paymentUrl: string }>('/api/payments', {
+      const result = await apiFetch<PaymentInitResponse>('/api/payments', {
         method: 'POST',
         body: JSON.stringify({ invoiceId: String(invoiceId), method: 'VNPAY' }),
       }, session?.token);
-      window.open(result.paymentUrl, '_blank', 'noopener,noreferrer');
+      if (result.paymentUrl) {
+        window.open(result.paymentUrl, '_blank', 'noopener,noreferrer');
+      } else {
+        setError(result.message || 'Backend không trả về link thanh toán.');
+      }
     } catch {
-      setError('Không tạo được link thanh toán thật, dùng mô phỏng trong giao diện.');
-      setInvoices((previous) => previous.map((item) => (item.invoiceId === invoiceId ? { ...item, status: 'PAID' } : item)));
+      setError('Không tạo được link thanh toán từ backend.');
     } finally {
       setBusy(false);
     }
@@ -286,7 +274,7 @@ export default function App() {
     event.preventDefault();
     setBusy(true);
     try {
-      const saved = await apiFetch<MeterReading>('/api/meter-readings', {
+      const saved = await apiFetch<MeterReadingSaveResponse>('/api/meter-readings', {
         method: 'POST',
         body: JSON.stringify({
           apartmentId: Number(meterForm.apartmentId),
@@ -297,11 +285,13 @@ export default function App() {
           waterNew: Number(meterForm.waterNew),
         }),
       }, session?.token);
-      setReadings((previous) => [saved, ...previous]);
+      await loadMeterReadings(Number(meterForm.apartmentId));
       setError('Đã lưu chỉ số mới.');
+      if (!saved.success) {
+        setError('Backend không xác nhận được chỉ số mới.');
+      }
     } catch {
-      setError('Không gọi được backend, dữ liệu chỉ số được xem là mô phỏng.');
-      setReadings((previous) => [{ meterReadingId: Date.now(), apartment: { apartmentId: 1, roomNumber: 'A-1208' }, ...meterFormToReading(meterForm) }, ...previous]);
+      setError('Không lưu được chỉ số vào backend.');
     } finally {
       setBusy(false);
     }
@@ -311,7 +301,7 @@ export default function App() {
     event.preventDefault();
     setBusy(true);
     try {
-      const saved = await apiFetch<ServiceRequest>('/api/service-requests', {
+      const saved = await apiFetch<ServiceRequestSaveResponse>('/api/service-requests', {
         method: 'POST',
         body: JSON.stringify({
           apartmentId: Number(serviceForm.apartmentId),
@@ -320,16 +310,17 @@ export default function App() {
           content: serviceForm.content,
         }),
       }, session?.token);
-      setRequests((previous) => [saved, ...previous]);
+      await loadServiceRequests();
       setServiceForm((previous) => ({ ...previous, title: '', content: '' }));
-      setError('Đã gửi yêu cầu.');
+      setError(saved.success ? 'Đã gửi yêu cầu.' : 'Backend không xác nhận được yêu cầu.');
     } catch {
-      setRequests((previous) => [{ requestId: Date.now(), status: 'PENDING', createdAt: new Date().toISOString(), ...serviceForm } as ServiceRequest, ...previous]);
-      setError('Backend chưa phản hồi, đã lưu yêu cầu mô phỏng trên màn hình.');
+      setError('Không gửi được yêu cầu lên backend.');
     } finally {
       setBusy(false);
     }
   }
+
+  const activeView = session?.role === 'RESIDENT' ? 'resident' : session?.role === 'ACCOUNTANT' ? 'accounting' : 'staff';
 
   if (!session) {
     return (
@@ -427,12 +418,6 @@ export default function App() {
         <StatCard label="Chưa thanh toán" value={String(stats.pending)} note="Chờ thanh toán hoặc quá hạn" />
         <StatCard label="Đã thanh toán" value={String(stats.paid)} note="Gạch nợ qua gateway/webhook" />
       </section>
-
-      <nav className="mb-6 flex flex-wrap gap-3">
-        <TabButton active={activeView === 'resident'} onClick={() => setActiveView('resident')} label="Cư dân" />
-        <TabButton active={activeView === 'staff'} onClick={() => setActiveView('staff')} label="BQL" />
-        <TabButton active={activeView === 'accounting'} onClick={() => setActiveView('accounting')} label="Kế toán" />
-      </nav>
 
       {error ? <div className="panel mb-6 border-amber-400/20 bg-amber-400/10 text-sm text-amber-100">{error}</div> : null}
 
@@ -685,14 +670,6 @@ function StatCard({ label, value, note }: { label: string; value: string; note: 
   );
 }
 
-function TabButton({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {
-  return (
-    <button className={active ? 'btn-primary' : 'btn-ghost'} onClick={onClick} type="button">
-      {label}
-    </button>
-  );
-}
-
 function DetailTile({ title, value }: { title: string; value: string }) {
   return (
     <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
@@ -732,14 +709,23 @@ function NumberField({ label, value, onChange }: { label: string; value: string;
 
 function MiniChart({ readings }: { readings: MeterReading[] }) {
   const latest = readings.slice(0, 2).reverse();
-  const items = latest.length ? latest : mockReadings;
+
+  if (!latest.length) {
+    return (
+      <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
+        <div className="label">Lịch sử tiêu thụ</div>
+        <h3 className="mt-1 text-lg font-semibold text-white">Biểu đồ mini</h3>
+        <p className="mt-5 text-sm text-slate-400">Chưa có dữ liệu chỉ số từ backend.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
       <div className="label">Lịch sử tiêu thụ</div>
       <h3 className="mt-1 text-lg font-semibold text-white">Biểu đồ mini</h3>
       <div className="mt-5 flex h-44 items-end gap-4">
-        {items.map((item) => {
+        {latest.map((item) => {
           const electric = Math.max(18, item.elecNew - item.elecOld);
           const water = Math.max(8, item.waterNew - item.waterOld);
           return (
@@ -761,14 +747,3 @@ function MiniChart({ readings }: { readings: MeterReading[] }) {
   );
 }
 
-function meterFormToReading(form: { apartmentId: string; monthYear: string; elecOld: string; elecNew: string; waterOld: string; waterNew: string }): MeterReading {
-  return {
-    meterReadingId: Date.now(),
-    apartment: { apartmentId: Number(form.apartmentId), roomNumber: 'A-1208' },
-    monthYear: form.monthYear,
-    elecOld: Number(form.elecOld),
-    elecNew: Number(form.elecNew),
-    waterOld: Number(form.waterOld),
-    waterNew: Number(form.waterNew),
-  };
-}
