@@ -1,7 +1,8 @@
 package com.smartfee.controller;
 
-import com.smartfee.model.User;
 import com.smartfee.dto.LoginRequest;
+import com.smartfee.dto.ResidentRegistrationRequest;
+import com.smartfee.model.User;
 import com.smartfee.service.AuthService;
 import com.smartfee.util.JwtUtil;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -40,9 +41,9 @@ public class AuthController {
                 .orElse(ResponseEntity.status(401).body(Map.of("error", "Invalid credentials")));
     }
 
-    @PostMapping("/register")
-    public ResponseEntity<User> register(@RequestBody User user) {
-        User saved = authService.register(user);
+    @PostMapping({ "/register", "/register/resident" })
+    public ResponseEntity<User> registerResident(@RequestBody ResidentRegistrationRequest request) {
+        User saved = authService.registerResident(request);
         return ResponseEntity.ok(saved);
     }
 }

@@ -124,7 +124,6 @@ export default function App() {
   const [loginForm, setLoginForm] = useState({ username: 'admin', password: 'password123' });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [activeView, setActiveView] = useState<'resident' | 'staff' | 'accounting'>('resident');
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [readings, setReadings] = useState<MeterReading[]>([]);
   const [requests, setRequests] = useState<ServiceRequest[]>([]);
@@ -184,14 +183,14 @@ export default function App() {
     void loadServiceRequests();
   }, [session]);
 
+  const currentInvoice = invoices[0];
+
   const currentApartmentId = currentInvoice?.apartment?.apartmentId;
 
   useEffect(() => {
     if (!session || !currentApartmentId) return;
     void loadMeterReadings(currentApartmentId);
   }, [session, currentApartmentId]);
-
-  const currentInvoice = invoices[0];
 
   const stats = useMemo(() => {
     const total = invoices.reduce((sum, item) => sum + (item.totalAmount || 0), 0);
@@ -210,7 +209,6 @@ export default function App() {
         body: JSON.stringify(loginForm),
       });
       setSession(result);
-      setActiveView(result.role === 'RESIDENT' ? 'resident' : result.role === 'ACCOUNTANT' ? 'accounting' : 'staff');
     } catch {
       setSession(null);
       setError('Không thể đăng nhập vào backend. Kiểm tra lại server, database hoặc tài khoản.');
@@ -322,6 +320,8 @@ export default function App() {
     }
   }
 
+  const activeView = session?.role === 'RESIDENT' ? 'resident' : session?.role === 'ACCOUNTANT' ? 'accounting' : 'staff';
+
   if (!session) {
     return (
       <main className="mx-auto flex min-h-screen max-w-7xl items-center px-4 py-10 sm:px-6 lg:px-8">
@@ -418,12 +418,6 @@ export default function App() {
         <StatCard label="Chưa thanh toán" value={String(stats.pending)} note="Chờ thanh toán hoặc quá hạn" />
         <StatCard label="Đã thanh toán" value={String(stats.paid)} note="Gạch nợ qua gateway/webhook" />
       </section>
-
-      <nav className="mb-6 flex flex-wrap gap-3">
-        <TabButton active={activeView === 'resident'} onClick={() => setActiveView('resident')} label="Cư dân" />
-        <TabButton active={activeView === 'staff'} onClick={() => setActiveView('staff')} label="BQL" />
-        <TabButton active={activeView === 'accounting'} onClick={() => setActiveView('accounting')} label="Kế toán" />
-      </nav>
 
       {error ? <div className="panel mb-6 border-amber-400/20 bg-amber-400/10 text-sm text-amber-100">{error}</div> : null}
 
@@ -673,14 +667,6 @@ function StatCard({ label, value, note }: { label: string; value: string; note: 
       <div className="mt-2 text-2xl font-black text-white">{value}</div>
       <div className="mt-1 text-sm text-slate-400">{note}</div>
     </div>
-  );
-}
-
-function TabButton({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {
-  return (
-    <button className={active ? 'btn-primary' : 'btn-ghost'} onClick={onClick} type="button">
-      {label}
-    </button>
   );
 }
 

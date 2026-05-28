@@ -1,11 +1,11 @@
 -- Dữ liệu mẫu cho testing
 
 -- Thêm users mẫu (password tạm thời, sẽ được hash khi đăng ký)
-INSERT INTO users (username, password, role) VALUES 
-('admin', '$2a$10$slYQmyNdGzin7olVN3ou2OPST9/PgBkqquzi.Ss7KIUgO2t0jKMm2', 'ADMIN'),
-('resident1', '$2a$10$slYQmyNdGzin7olVN3ou2OPST9/PgBkqquzi.Ss7KIUgO2t0jKMm2', 'RESIDENT'),
-('resident2', '$2a$10$slYQmyNdGzin7olVN3ou2OPST9/PgBkqquzi.Ss7KIUgO2t0jKMm2', 'RESIDENT'),
-('accountant', '$2a$10$slYQmyNdGzin7olVN3ou2OPST9/PgBkqquzi.Ss7KIUgO2t0jKMm2', 'ACCOUNTANT');
+INSERT INTO users (username, password, role, approval_status) VALUES 
+('admin', '$2a$10$kk3iQsSTDh9sVAy2yxZx7.MBOUAcSJyw7/g6dRZo4ja3yvEHocDyS', 'ADMIN', 'APPROVED'),
+('resident1', '$2a$10$kk3iQsSTDh9sVAy2yxZx7.MBOUAcSJyw7/g6dRZo4ja3yvEHocDyS', 'RESIDENT', 'APPROVED'),
+('resident2', '$2a$10$kk3iQsSTDh9sVAy2yxZx7.MBOUAcSJyw7/g6dRZo4ja3yvEHocDyS', 'RESIDENT', 'APPROVED'),
+('accountant', '$2a$10$kk3iQsSTDh9sVAy2yxZx7.MBOUAcSJyw7/g6dRZo4ja3yvEHocDyS', 'ACCOUNTANT', 'APPROVED');
 
 -- Thêm apartments mẫu
 INSERT INTO apartments (room_number, area, owner_id) VALUES 

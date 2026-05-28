@@ -131,11 +131,15 @@ Request:
 {
   "username": "newuser",
   "password": "password123",
-  "role": "RESIDENT"
+  "fullName": "Nguyen Van A",
+  "phoneNumber": "0909123456",
+  "apartmentCode": "101"
 }
 
 Response: User object
 ```
+
+Tài khoản đăng ký mới của cư dân sẽ ở trạng thái chờ duyệt. Admin phải xác nhận thì tài khoản mới được phép đăng nhập.
 
 ### Invoices
 
@@ -207,10 +211,12 @@ Authorization: Bearer <token>
 ```
 
 ### Roles
-- **ADMIN**: Quản lý toàn bộ hệ thống
-- **RESIDENT**: Cư dân - xem hóa đơn, thanh toán
-- **ACCOUNTANT**: Kế toán - quản lý hóa đơn
-- **STAFF**: Nhân viên - hỗ trợ
+- **ADMIN**: Quản lý toàn bộ hệ thống, tạo tài khoản, xem tất cả dữ liệu, cấu hình và vận hành các chức năng quản trị.
+- **RESIDENT**: Cư dân, chỉ xem dữ liệu của chính mình, tra cứu hóa đơn, thanh toán, gửi yêu cầu hỗ trợ/khiếu nại.
+- **ACCOUNTANT**: Kế toán, quản lý và đối soát hóa đơn, gạch nợ, theo dõi trạng thái thanh toán và báo cáo tài chính.
+- **STAFF**: Nhân viên BQL, nhập chỉ số, xử lý yêu cầu nội bộ, hỗ trợ vận hành và cập nhật dữ liệu căn hộ.
+
+> Mỗi tài khoản chỉ có một role duy nhất. Các tài khoản ADMIN, ACCOUNTANT và STAFF được tạo sẵn hoặc do admin cấp. Người dùng tự đăng ký chỉ tạo yêu cầu cư dân và phải chờ admin duyệt.
 
 ## Định dạng Response Lỗi
 
