@@ -7,6 +7,16 @@ type UserSession = {
   username: string;
 };
 
+type AuthMode = 'login' | 'register';
+
+type ResidentRegistrationForm = {
+  username: string;
+  password: string;
+  fullName: string;
+  phoneNumber: string;
+  apartmentCode: string;
+};
+
 type Invoice = {
   invoiceId: number;
   billingMonth?: string;
@@ -76,6 +86,15 @@ type NotificationLog = {
   createdAt?: string;
 };
 
+type PendingRegistration = {
+  userId: number;
+  username: string;
+  fullName?: string;
+  phoneNumber?: string;
+  apartmentCode?: string;
+  approvalStatus?: string;
+};
+
 const apiBase = '';
 
 async function apiFetch<T>(path: string, options?: RequestInit, token?: string): Promise<T> {
@@ -89,7 +108,13 @@ async function apiFetch<T>(path: string, options?: RequestInit, token?: string):
   });
 
   if (!response.ok) {
-    throw new Error(await response.text());
+    const raw = await response.text();
+    try {
+      const parsed = JSON.parse(raw) as { message?: string; error?: string };
+      throw new Error(parsed.message || parsed.error || raw || response.statusText);
+    } catch {
+      throw new Error(raw || response.statusText);
+    }
   }
 
   return response.json() as Promise<T>;
@@ -121,13 +146,22 @@ export default function App() {
     const raw = localStorage.getItem('smartfee-session');
     return raw ? (JSON.parse(raw) as UserSession) : null;
   });
+  const [authMode, setAuthMode] = useState<AuthMode>('login');
   const [loginForm, setLoginForm] = useState({ username: 'admin', password: 'password123' });
+  const [registerForm, setRegisterForm] = useState<ResidentRegistrationForm>({
+    username: '',
+    password: '',
+    fullName: '',
+    phoneNumber: '',
+    apartmentCode: '',
+  });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [readings, setReadings] = useState<MeterReading[]>([]);
   const [requests, setRequests] = useState<ServiceRequest[]>([]);
   const [notifications, setNotifications] = useState<NotificationLog[]>([]);
+  const [pendingRegistrations, setPendingRegistrations] = useState<PendingRegistration[]>([]);
   const [serviceForm, setServiceForm] = useState({ apartmentId: '1', requestType: 'SERVICE', title: '', content: '' });
   const [meterForm, setMeterForm] = useState({ apartmentId: '1', monthYear: '2026-05', elecOld: '1240', elecNew: '1712', waterOld: '92', waterNew: '118' });
 
@@ -177,10 +211,23 @@ export default function App() {
     }
   }
 
+  async function loadPendingRegistrations() {
+    if (!session || session.role !== 'ADMIN') return;
+
+    try {
+      const list = await apiFetch<PendingRegistration[]>('/api/admin/registrations/pending', undefined, session.token);
+      setPendingRegistrations(list);
+    } catch {
+      setPendingRegistrations([]);
+      setError('Không tải được danh sách cư dân chờ duyệt.');
+    }
+  }
+
   useEffect(() => {
     if (!session) return;
     void loadInvoicesAndNotifications();
     void loadServiceRequests();
+    void loadPendingRegistrations();
   }, [session]);
 
   const currentInvoice = invoices[0];
@@ -209,9 +256,35 @@ export default function App() {
         body: JSON.stringify(loginForm),
       });
       setSession(result);
-    } catch {
+    } catch (caught) {
       setSession(null);
-      setError('Không thể đăng nhập vào backend. Kiểm tra lại server, database hoặc tài khoản.');
+      setError(caught instanceof Error ? caught.message : 'Không thể đăng nhập vào backend. Kiểm tra lại server, database hoặc tài khoản.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onRegister(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy(true);
+    setError('');
+    try {
+      const saved = await apiFetch<{ username: string; approvalStatus?: string }>('/api/auth/register/resident', {
+        method: 'POST',
+        body: JSON.stringify(registerForm),
+      });
+      setLoginForm((previous) => ({ ...previous, username: saved.username, password: '' }));
+      setRegisterForm({
+        username: saved.username,
+        password: '',
+        fullName: '',
+        phoneNumber: '',
+        apartmentCode: '',
+      });
+      setAuthMode('login');
+      setError('Đăng ký thành công. Tài khoản cư dân đang chờ BQL duyệt trước khi đăng nhập.');
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Không thể đăng ký tài khoản cư dân.');
     } finally {
       setBusy(false);
     }
@@ -232,8 +305,8 @@ export default function App() {
       }, session?.token);
       setError('Đã kích hoạt tính phí tháng 5/2026.');
       await loadInvoicesAndNotifications();
-    } catch {
-      setError('Không gọi được backend để tính phí.');
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Không gọi được backend để tính phí.');
     } finally {
       setBusy(false);
     }
@@ -246,6 +319,36 @@ export default function App() {
       await loadInvoicesAndNotifications();
     } catch {
       setError('Không gạch nợ được trên backend.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function approveRegistration(userId: number) {
+    if (!session) return;
+    setBusy(true);
+    setError('');
+    try {
+      await apiFetch(`/api/admin/registrations/${userId}/approve`, { method: 'POST' }, session.token);
+      await loadPendingRegistrations();
+      setError('Đã duyệt đăng ký cư dân.');
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Không duyệt được đăng ký cư dân.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function rejectRegistration(userId: number) {
+    if (!session) return;
+    setBusy(true);
+    setError('');
+    try {
+      await apiFetch(`/api/admin/registrations/${userId}/reject`, { method: 'POST' }, session.token);
+      await loadPendingRegistrations();
+      setError('Đã từ chối đăng ký cư dân.');
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Không từ chối được đăng ký cư dân.');
     } finally {
       setBusy(false);
     }
@@ -320,7 +423,8 @@ export default function App() {
     }
   }
 
-  const activeView = session?.role === 'RESIDENT' ? 'resident' : session?.role === 'ACCOUNTANT' ? 'accounting' : 'staff';
+  const activeView = session?.role === 'ADMIN' ? 'admin' : session?.role === 'RESIDENT' ? 'resident' : session?.role === 'ACCOUNTANT' ? 'accounting' : 'staff';
+  const managementLabel = session?.role === 'ADMIN' ? 'Admin' : 'BQL';
 
   if (!session) {
     return (
@@ -356,27 +460,81 @@ export default function App() {
           </section>
 
           <section className="panel">
-            <form className="space-y-5" onSubmit={onLogin}>
+            <div className="flex gap-2 rounded-2xl border border-white/10 bg-white/5 p-1 text-sm">
+              <button
+                className={`flex-1 rounded-xl px-3 py-2 font-semibold transition ${authMode === 'login' ? 'bg-sky-500 text-white' : 'text-slate-300 hover:text-white'}`}
+                type="button"
+                onClick={() => setAuthMode('login')}
+              >
+                Đăng nhập
+              </button>
+              <button
+                className={`flex-1 rounded-xl px-3 py-2 font-semibold transition ${authMode === 'register' ? 'bg-sky-500 text-white' : 'text-slate-300 hover:text-white'}`}
+                type="button"
+                onClick={() => setAuthMode('register')}
+              >
+                Đăng ký cư dân
+              </button>
+            </div>
+
+            <form className="space-y-5" onSubmit={authMode === 'login' ? onLogin : onRegister}>
               <div>
-                <p className="label">Đăng nhập</p>
-                <h2 className="mt-2 text-2xl font-bold text-white">Vào hệ thống</h2>
+                <p className="label">{authMode === 'login' ? 'Đăng nhập' : 'Đăng ký cư dân'}</p>
+                <h2 className="mt-2 text-2xl font-bold text-white">{authMode === 'login' ? 'Vào hệ thống' : 'Gửi hồ sơ đăng ký căn hộ'}</h2>
               </div>
 
-              <div>
-                <label className="label">Tên đăng nhập</label>
-                <input className="input mt-2" value={loginForm.username} onChange={(event) => setLoginForm({ ...loginForm, username: event.target.value })} />
-              </div>
+              {authMode === 'login' ? (
+                <>
+                  <div>
+                    <label className="label">Tên đăng nhập</label>
+                    <input className="input mt-2" value={loginForm.username} onChange={(event) => setLoginForm({ ...loginForm, username: event.target.value })} />
+                  </div>
 
-              <div>
-                <label className="label">Mật khẩu</label>
-                <input type="password" className="input mt-2" value={loginForm.password} onChange={(event) => setLoginForm({ ...loginForm, password: event.target.value })} />
-              </div>
+                  <div>
+                    <label className="label">Mật khẩu</label>
+                    <input type="password" className="input mt-2" value={loginForm.password} onChange={(event) => setLoginForm({ ...loginForm, password: event.target.value })} />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div>
+                    <label className="label">Tên đăng nhập</label>
+                    <input className="input mt-2" value={registerForm.username} onChange={(event) => setRegisterForm({ ...registerForm, username: event.target.value })} placeholder="vd: resident01" />
+                  </div>
+
+                  <div>
+                    <label className="label">Mật khẩu</label>
+                    <input type="password" className="input mt-2" value={registerForm.password} onChange={(event) => setRegisterForm({ ...registerForm, password: event.target.value })} placeholder="Đặt mật khẩu cho cư dân" />
+                  </div>
+
+                  <div>
+                    <label className="label">Họ và tên</label>
+                    <input className="input mt-2" value={registerForm.fullName} onChange={(event) => setRegisterForm({ ...registerForm, fullName: event.target.value })} placeholder="Nguyễn Văn A" />
+                  </div>
+
+                  <div>
+                    <label className="label">Số điện thoại</label>
+                    <input className="input mt-2" value={registerForm.phoneNumber} onChange={(event) => setRegisterForm({ ...registerForm, phoneNumber: event.target.value })} placeholder="09xxxxxxxx" />
+                  </div>
+
+                  <div>
+                    <label className="label">Mã căn hộ</label>
+                    <input className="input mt-2" value={registerForm.apartmentCode} onChange={(event) => setRegisterForm({ ...registerForm, apartmentCode: event.target.value })} placeholder="A-1208" />
+                  </div>
+                </>
+              )}
 
               {error ? <p className="rounded-2xl border border-amber-400/20 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">{error}</p> : null}
 
               <button className="btn-primary w-full" disabled={busy} type="submit">
-                {busy ? 'Đang xử lý...' : 'Đăng nhập'}
+                {busy ? 'Đang xử lý...' : authMode === 'login' ? 'Đăng nhập' : 'Gửi đăng ký'}
               </button>
+
+              <p className="text-xs leading-6 text-slate-400">
+                {authMode === 'login'
+                  ? 'Admin/Accountant dùng tài khoản có sẵn để vào hệ thống ngay. Cư dân sau khi đăng ký sẽ chờ BQL duyệt mới đăng nhập được.'
+                  : 'Chỉ dùng cho cư dân. Sau khi gửi đăng ký, tài khoản sẽ ở trạng thái chờ duyệt.'}
+              </p>
 
               <div className="grid grid-cols-2 gap-3 text-xs text-slate-300">
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
@@ -413,13 +571,80 @@ export default function App() {
         </div>
       </header>
 
-      <section className="mb-6 grid gap-4 md:grid-cols-3">
-        <StatCard label="Tổng phí" value={formatCurrency(stats.total)} note="Cộng từ các hóa đơn hiện có" />
-        <StatCard label="Chưa thanh toán" value={String(stats.pending)} note="Chờ thanh toán hoặc quá hạn" />
-        <StatCard label="Đã thanh toán" value={String(stats.paid)} note="Gạch nợ qua gateway/webhook" />
-      </section>
+      {activeView !== 'admin' ? (
+        <section className="mb-6 grid gap-4 md:grid-cols-3">
+          <StatCard label="Tổng phí" value={formatCurrency(stats.total)} note="Cộng từ các hóa đơn hiện có" />
+          <StatCard label="Chưa thanh toán" value={String(stats.pending)} note="Chờ thanh toán hoặc quá hạn" />
+          <StatCard label="Đã thanh toán" value={String(stats.paid)} note="Gạch nợ qua gateway/webhook" />
+        </section>
+      ) : null}
 
       {error ? <div className="panel mb-6 border-amber-400/20 bg-amber-400/10 text-sm text-amber-100">{error}</div> : null}
+
+      {activeView === 'admin' ? (
+        <div className="grid gap-6 lg:grid-cols-[0.95fr_1.05fr]">
+          <section className="panel">
+            <p className="label">Home Admin</p>
+            <h2 className="mt-1 text-2xl font-bold text-white">Duyệt đăng ký cư dân</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-300">
+              Màn hình tối giản cho admin: xem danh sách chờ duyệt và xử lý nhanh. Các tính năng quản trị khác sẽ theo wireframe riêng.
+            </p>
+
+            <div className="mt-5 flex gap-3">
+              <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+                <div className="text-xs uppercase tracking-[0.14em] text-slate-400">Chờ duyệt</div>
+                <div className="mt-1 text-xl font-black text-white">{pendingRegistrations.length}</div>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+                <div className="text-xs uppercase tracking-[0.14em] text-slate-400">Vai trò</div>
+                <div className="mt-1 text-xl font-black text-white">ADMIN</div>
+              </div>
+            </div>
+          </section>
+
+          <section className="panel">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="label">Danh sách chờ duyệt</p>
+                <h3 className="mt-1 text-xl font-semibold text-white">Cư dân đăng ký mới</h3>
+              </div>
+            </div>
+
+            <div className="mt-5 space-y-4">
+              {pendingRegistrations.length ? (
+                pendingRegistrations.map((item) => (
+                  <div key={item.userId} className="rounded-3xl border border-white/10 bg-slate-950/50 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-semibold text-white">{item.fullName || item.username}</div>
+                        <div className="mt-1 text-xs text-slate-400">{item.username}</div>
+                        <div className="mt-1 text-xs text-slate-500">Căn hộ: {item.apartmentCode || 'N/A'} · SĐT: {item.phoneNumber || 'N/A'}</div>
+                        {!item.apartmentCode ? (
+                          <div className="mt-2 text-xs text-rose-200">Thiếu mã căn hộ nên không thể duyệt, chỉ có thể từ chối hoặc cập nhật dữ liệu.</div>
+                        ) : null}
+                      </div>
+                      <StatusBadge status={item.approvalStatus} />
+                    </div>
+
+                    <div className="mt-4 flex gap-3">
+                      <button className="btn-primary flex-1" disabled={busy || !item.apartmentCode} type="button" onClick={() => approveRegistration(item.userId)}>
+                        Duyệt
+                      </button>
+                      <button className="btn-ghost flex-1" disabled={busy} type="button" onClick={() => rejectRegistration(item.userId)}>
+                        Từ chối
+                      </button>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="rounded-3xl border border-dashed border-white/10 bg-slate-950/30 p-6 text-sm text-slate-400">
+                  Không có cư dân nào đang chờ duyệt.
+                </div>
+              )}
+            </div>
+          </section>
+        </div>
+      ) : null}
 
       {activeView === 'resident' ? (
         <div className="grid gap-6 lg:grid-cols-[1.25fr_0.75fr]">
@@ -530,7 +755,7 @@ export default function App() {
         <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
           <section className="panel">
             <p className="label">Nhập chỉ số</p>
-            <h2 className="mt-1 text-2xl font-bold text-white">Web Portal cho BQL</h2>
+            <h2 className="mt-1 text-2xl font-bold text-white">Web Portal cho {managementLabel}</h2>
             <form className="mt-5 space-y-4" onSubmit={submitMeterReading}>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>

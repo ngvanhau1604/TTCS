@@ -114,7 +114,9 @@ public class AuthServiceTest {
 
         when(userRepository.findByUsername("newuser")).thenReturn(Optional.of(user));
 
-        assertTrue(authService.authenticate("newuser", "password123").isEmpty());
+        InvalidDataException ex = assertThrows(InvalidDataException.class,
+                () -> authService.authenticate("newuser", "password123"));
+        assertTrue(ex.getMessage().contains("duyệt"));
         verify(passwordEncoder, never()).matches(any(), any());
     }
 
