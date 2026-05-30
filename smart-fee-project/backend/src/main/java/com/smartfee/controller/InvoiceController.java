@@ -11,13 +11,19 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.LinkedHashMap;
 import java.util.stream.Collectors;
+import com.smartfee.repository.ApartmentRepository;
+import com.smartfee.model.Apartment;
 
 @RestController
 @RequestMapping("/api/invoices")
 public class InvoiceController {
     @Autowired
     private InvoiceService invoiceService;
+
+    @Autowired
+    private ApartmentRepository apartmentRepository;
 
     private static final Set<String> VALID_STATUSES = Set.of("DRAFT", "PENDING", "PAID", "OVERDUE", "UNPAID");
 
@@ -162,10 +168,29 @@ public class InvoiceController {
 
             int createdCount = invoiceService.generateMonthlyInvoices(month, year);
 
-            return ResponseEntity.ok(Map.of(
-                    "totalCalculated", createdCount,
-                    "success", true,
-                    "message", "Tính phí thành công cho " + createdCount + " căn hộ"));
+            // Compute skipped (duplicates) as total apartments - created
+            int totalApartments = 0;
+            try {
+                List<Apartment> all = apartmentRepository.findAll();
+                totalApartments = all == null ? 0 : all.size();
+            } catch (Exception ignore) {
+                totalApartments = 0;
+            }
+
+            int skipped = Math.max(0, totalApartments - createdCount);
+
+            Map<String, Object> resp = new LinkedHashMap<>();
+            resp.put("totalCalculated", createdCount);
+            resp.put("skipped", skipped);
+            resp.put("success", true);
+            String msg = "Tính phí thành công cho " + createdCount + " căn hộ";
+            if (skipped > 0) {
+                msg += ". Đã phát hiện " + skipped + " căn hộ đã có hóa đơn, bỏ qua.";
+                resp.put("warning", "Đã phát hiện bản ghi trùng, xem logs để biết chi tiết");
+            }
+            resp.put("message", msg);
+
+            return ResponseEntity.ok(resp);
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of(
                     "error", e.getMessage(),
