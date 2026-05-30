@@ -1,8 +1,13 @@
 FROM node:18-alpine AS build
 WORKDIR /app
+
+# Copy các file cấu hình trước
 COPY package.json package-lock.json* ./
-COPY tsconfig.json vite.config.ts postcss.config.js tailwind.config.js ./
-COPY src ./src
+
+# Copy toàn bộ mã nguồn vào container
+COPY . . 
+
+# Cài đặt thư viện và build ngay sau khi đã copy xong toàn bộ file
 RUN npm ci && npm run build
 
 FROM nginx:stable-alpine

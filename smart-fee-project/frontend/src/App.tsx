@@ -155,15 +155,20 @@ export default function App() {
     phoneNumber: '',
     apartmentCode: '',
   });
+  const [isRegistering, setIsRegistering] = useState(false);
+  const [registerSuccess, setRegisterSuccess] = useState('');
+
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [readings, setReadings] = useState<MeterReading[]>([]);
   const [requests, setRequests] = useState<ServiceRequest[]>([]);
   const [notifications, setNotifications] = useState<NotificationLog[]>([]);
+  // 
   const [pendingRegistrations, setPendingRegistrations] = useState<PendingRegistration[]>([]);
   const [serviceForm, setServiceForm] = useState({ apartmentId: '1', requestType: 'SERVICE', title: '', content: '' });
   const [meterForm, setMeterForm] = useState({ apartmentId: '1', monthYear: '2026-05', elecOld: '1240', elecNew: '1712', waterOld: '92', waterNew: '118' });
+  //
 
   useEffect(() => {
     if (!session) return;
@@ -223,6 +228,34 @@ export default function App() {
     }
   }
 
+  // Tính năng chấp nhận đăng ký tài khoản mới của BQL, chỉ hiện khi admin đăng nhập
+  async function handleApproveUser(userId: number) {
+    setBusy(true);
+    setError('');
+    try {
+      await apiFetch(`/api/admin/registrations/${userId}/approve`, { method: 'POST' }, session?.token);
+      await loadPendingRegistrations(); // Load lại danh sách cho mới
+      setError('Đã duyệt tài khoản thành công!');
+    } catch {
+      setError('Lỗi khi duyệt tài khoản. Kiểm tra lại backend.');
+    } finally {
+      setBusy(false);
+    }
+  }
+  // Tính năng từ chối đăng ký tài khoản mới của BQL, chỉ hiện khi admin đăng nhập
+  async function handleRejectUser(userId: number) {
+    setBusy(true);
+    setError('');
+    try {
+      await apiFetch(`/api/admin/registrations/${userId}/reject`, { method: 'POST' }, session?.token);
+      await loadPendingRegistrations();
+    } catch {
+      setError('Lỗi khi từ chối tài khoản. Kiểm tra lại backend.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   useEffect(() => {
     if (!session) return;
     void loadInvoicesAndNotifications();
@@ -250,15 +283,27 @@ export default function App() {
     event.preventDefault();
     setBusy(true);
     setError('');
+    setRegisterSuccess(''); // Xóa thông báo đăng ký nếu có khi người dùng chuyển sang đăng nhập
     try {
-      const result = await apiFetch<UserSession>('/api/auth/login', {
+      // Dùng fetch thuần để dễ dàng bắt chính xác Status 403
+      const response = await fetch(`${apiBase}/api/auth/login`, {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(loginForm),
       });
-      setSession(result);
-    } catch (caught) {
-      setSession(null);
-      setError(caught instanceof Error ? caught.message : 'Không thể đăng nhập vào backend. Kiểm tra lại server, database hoặc tài khoản.');
+      const data = await response.json();
+
+      if (response.ok) {
+        setSession(data as UserSession);
+      } else if (response.status === 403) {
+        // Test case 3: BQL chưa duyệt -> Báo lỗi 403
+        setError(data.error || 'Tài khoản của bạn đang chờ Ban quản lý xét duyệt.');
+      } else {
+        // Test case 1: Sai pass -> Báo lỗi 401
+        setError(data.error || 'Sai tên đăng nhập hoặc mật khẩu.');
+      }
+    } catch {
+      setError('Không thể kết nối đến server. Kiểm tra lại Backend.');
     } finally {
       setBusy(false);
     }
@@ -268,23 +313,26 @@ export default function App() {
     event.preventDefault();
     setBusy(true);
     setError('');
+    setRegisterSuccess('');
+
     try {
-      const saved = await apiFetch<{ username: string; approvalStatus?: string }>('/api/auth/register/resident', {
+      const response = await fetch(`${apiBase}/api/auth/register`, {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(registerForm),
       });
-      setLoginForm((previous) => ({ ...previous, username: saved.username, password: '' }));
-      setRegisterForm({
-        username: saved.username,
-        password: '',
-        fullName: '',
-        phoneNumber: '',
-        apartmentCode: '',
-      });
-      setAuthMode('login');
-      setError('Đăng ký thành công. Tài khoản cư dân đang chờ BQL duyệt trước khi đăng nhập.');
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Không thể đăng ký tài khoản cư dân.');
+      const data = await response.json();
+
+      if (response.ok) {
+        // Test case 2: Đăng ký thành công -> Hiện thông báo, KHÔNG chuyển về trang login
+        setRegisterSuccess(data.message || 'Đăng ký thành công. Vui lòng chờ duyệt.');
+        // Tùy chọn: Xóa trắng form sau khi gửi
+        setRegisterForm({ username: '', password: '', fullName: '', phoneNumber: '', apartmentCode: '' });
+      } else {
+        setError(data.error || 'Đăng ký thất bại. Vui lòng kiểm tra lại thông tin.');
+      }
+    } catch {
+      setError('Không thể kết nối đến server.');
     } finally {
       setBusy(false);
     }
@@ -460,93 +508,81 @@ export default function App() {
           </section>
 
           <section className="panel">
-            <div className="flex gap-2 rounded-2xl border border-white/10 bg-white/5 p-1 text-sm">
-              <button
-                className={`flex-1 rounded-xl px-3 py-2 font-semibold transition ${authMode === 'login' ? 'bg-sky-500 text-white' : 'text-slate-300 hover:text-white'}`}
-                type="button"
-                onClick={() => setAuthMode('login')}
-              >
-                Đăng nhập
-              </button>
-              <button
-                className={`flex-1 rounded-xl px-3 py-2 font-semibold transition ${authMode === 'register' ? 'bg-sky-500 text-white' : 'text-slate-300 hover:text-white'}`}
-                type="button"
-                onClick={() => setAuthMode('register')}
-              >
-                Đăng ký cư dân
-              </button>
-            </div>
+            {!isRegistering ? (
+              // FORM ĐĂNG NHẬP
+              <form className="space-y-5" onSubmit={onLogin}>
+                <div>
+                  <p className="label">Đăng nhập</p>
+                  <h2 className="mt-2 text-2xl font-bold text-white">Vào hệ thống</h2>
+                </div>
 
-            <form className="space-y-5" onSubmit={authMode === 'login' ? onLogin : onRegister}>
-              <div>
-                <p className="label">{authMode === 'login' ? 'Đăng nhập' : 'Đăng ký cư dân'}</p>
-                <h2 className="mt-2 text-2xl font-bold text-white">{authMode === 'login' ? 'Vào hệ thống' : 'Gửi hồ sơ đăng ký căn hộ'}</h2>
-              </div>
+                <div>
+                  <label className="label">Tên đăng nhập</label>
+                  <input className="input mt-2" value={loginForm.username} onChange={(e) => setLoginForm({ ...loginForm, username: e.target.value })} />
+                </div>
 
-              {authMode === 'login' ? (
-                <>
+                <div>
+                  <label className="label">Mật khẩu</label>
+                  <input type="password" className="input mt-2" value={loginForm.password} onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })} />
+                </div>
+
+                {error ? <p className="rounded-2xl border border-rose-400/20 bg-rose-400/10 px-4 py-3 text-sm text-rose-200">{error}</p> : null}
+
+                <button className="btn-primary w-full" disabled={busy} type="submit">
+                  {busy ? 'Đang xử lý...' : 'Đăng nhập'}
+                </button>
+
+                <div className="text-center text-sm text-slate-400 mt-4">
+                  Cư dân mới? <button type="button" onClick={() => {setIsRegistering(true); setError(''); setRegisterSuccess('');}} className="text-sky-400 font-bold hover:underline">Đăng ký tài khoản</button>
+                </div>
+              </form>
+            ) : (
+              // FORM ĐĂNG KÝ CƯ DÂN
+              <form className="space-y-4" onSubmit={onRegister}>
+                <div>
+                  <p className="label">Dành cho Cư dân</p>
+                  <h2 className="mt-2 text-2xl font-bold text-white">Đăng ký tài khoản</h2>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
                   <div>
                     <label className="label">Tên đăng nhập</label>
-                    <input className="input mt-2" value={loginForm.username} onChange={(event) => setLoginForm({ ...loginForm, username: event.target.value })} />
+                    <input className="input mt-1" required value={registerForm.username} onChange={(e) => setRegisterForm({ ...registerForm, username: e.target.value })} />
                   </div>
-
                   <div>
                     <label className="label">Mật khẩu</label>
-                    <input type="password" className="input mt-2" value={loginForm.password} onChange={(event) => setLoginForm({ ...loginForm, password: event.target.value })} />
+                    <input type="password" required className="input mt-1" value={registerForm.password} onChange={(e) => setRegisterForm({ ...registerForm, password: e.target.value })} />
                   </div>
-                </>
-              ) : (
-                <>
-                  <div>
-                    <label className="label">Tên đăng nhập</label>
-                    <input className="input mt-2" value={registerForm.username} onChange={(event) => setRegisterForm({ ...registerForm, username: event.target.value })} placeholder="vd: resident01" />
-                  </div>
+                </div>
 
-                  <div>
-                    <label className="label">Mật khẩu</label>
-                    <input type="password" className="input mt-2" value={registerForm.password} onChange={(event) => setRegisterForm({ ...registerForm, password: event.target.value })} placeholder="Đặt mật khẩu cho cư dân" />
-                  </div>
+                <div>
+                  <label className="label">Họ và tên</label>
+                  <input className="input mt-1" required value={registerForm.fullName} onChange={(e) => setRegisterForm({ ...registerForm, fullName: e.target.value })} />
+                </div>
 
-                  <div>
-                    <label className="label">Họ và tên</label>
-                    <input className="input mt-2" value={registerForm.fullName} onChange={(event) => setRegisterForm({ ...registerForm, fullName: event.target.value })} placeholder="Nguyễn Văn A" />
-                  </div>
-
+                <div className="grid gap-4 sm:grid-cols-2">
                   <div>
                     <label className="label">Số điện thoại</label>
-                    <input className="input mt-2" value={registerForm.phoneNumber} onChange={(event) => setRegisterForm({ ...registerForm, phoneNumber: event.target.value })} placeholder="09xxxxxxxx" />
+                    <input className="input mt-1" required value={registerForm.phoneNumber} onChange={(e) => setRegisterForm({ ...registerForm, phoneNumber: e.target.value })} />
                   </div>
-
                   <div>
-                    <label className="label">Mã căn hộ</label>
-                    <input className="input mt-2" value={registerForm.apartmentCode} onChange={(event) => setRegisterForm({ ...registerForm, apartmentCode: event.target.value })} placeholder="A-1208" />
+                    <label className="label">Mã căn hộ (VD: 101)</label>
+                    <input className="input mt-1" required value={registerForm.apartmentCode} onChange={(e) => setRegisterForm({ ...registerForm, apartmentCode: e.target.value })} />
                   </div>
-                </>
-              )}
-
-              {error ? <p className="rounded-2xl border border-amber-400/20 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">{error}</p> : null}
-
-              <button className="btn-primary w-full" disabled={busy} type="submit">
-                {busy ? 'Đang xử lý...' : authMode === 'login' ? 'Đăng nhập' : 'Gửi đăng ký'}
-              </button>
-
-              <p className="text-xs leading-6 text-slate-400">
-                {authMode === 'login'
-                  ? 'Admin/Accountant dùng tài khoản có sẵn để vào hệ thống ngay. Cư dân sau khi đăng ký sẽ chờ BQL duyệt mới đăng nhập được.'
-                  : 'Chỉ dùng cho cư dân. Sau khi gửi đăng ký, tài khoản sẽ ở trạng thái chờ duyệt.'}
-              </p>
-
-              <div className="grid grid-cols-2 gap-3 text-xs text-slate-300">
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-                  <div className="font-semibold text-white">Admin / Staff</div>
-                  <div className="mt-1">Quản lý cư dân, chỉ số và hóa đơn.</div>
                 </div>
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-                  <div className="font-semibold text-white">Resident</div>
-                  <div className="mt-1">Xem hóa đơn, thanh toán, gửi khiếu nại.</div>
+
+                {error ? <p className="rounded-2xl border border-rose-400/20 bg-rose-400/10 px-4 py-3 text-sm text-rose-200">{error}</p> : null}
+                {registerSuccess ? <p className="rounded-2xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-200">{registerSuccess}</p> : null}
+
+                <button className="btn-primary w-full bg-emerald-500 hover:bg-emerald-400" disabled={busy} type="submit">
+                  {busy ? 'Đang gửi...' : 'Gửi hồ sơ đăng ký'}
+                </button>
+
+                <div className="text-center text-sm text-slate-400 mt-4">
+                  Đã có tài khoản? <button type="button" onClick={() => {setIsRegistering(false); setError(''); setRegisterSuccess('');}} className="text-sky-400 font-bold hover:underline">Quay lại Đăng nhập</button>
                 </div>
-              </div>
-            </form>
+              </form>
+            )}
           </section>
         </div>
       </main>
@@ -821,6 +857,40 @@ export default function App() {
                     <StatusBadge status={item.status} />
                   </div>
                 ))}
+              </div>
+            </div>
+            
+            <div className="mt-6 rounded-3xl border border-white/10 bg-white/5 p-4">
+              <div className="label">Tài khoản Cư dân chờ duyệt</div>
+              <div className="mt-4 space-y-3">
+                {pendingRegistrations.length === 0 ? (
+                  <div className="text-sm text-slate-400">Không có tài khoản nào đang chờ.</div>
+                ) : (
+                  pendingRegistrations.map((u) => (
+                    <div key={u.userId} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-white/10 bg-slate-950/40 px-4 py-3">
+                      <div>
+                        <div className="text-sm font-semibold text-white">{u.fullName} (Căn {u.apartmentCode})</div>
+                        <div className="text-xs text-slate-400">@{u.username} - ĐT: {u.phoneNumber}</div>
+                      </div>
+                      <div className="flex gap-2">
+                        <button 
+                          className="btn-primary py-1 px-3 text-xs bg-emerald-500 hover:bg-emerald-400" 
+                          disabled={busy} 
+                          onClick={() => handleApproveUser(u.userId)}
+                        >
+                          Duyệt
+                        </button>
+                        <button 
+                          className="btn-primary py-1 px-3 text-xs bg-rose-500 hover:bg-rose-400" 
+                          disabled={busy} 
+                          onClick={() => handleRejectUser(u.userId)}
+                        >
+                          Từ chối
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           </section>
