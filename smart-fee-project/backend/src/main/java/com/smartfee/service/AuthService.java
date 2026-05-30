@@ -48,7 +48,8 @@ public class AuthService {
         if (DEFAULT_ROLE.equalsIgnoreCase(foundUser.getRole())) {
             if (!STATUS_APPROVED.equalsIgnoreCase(foundUser.getApprovalStatus())) {
                 logger.warn("User {} is not approved yet: {}", foundUser.getUsername(), foundUser.getApprovalStatus());
-                return Optional.empty();
+                throw new InvalidDataException(
+                        "Tài khoản cư dân đang chờ duyệt. Vui lòng đợi BQL phê duyệt trước khi đăng nhập.");
             }
         } else if (foundUser.getApprovalStatus() == null || foundUser.getApprovalStatus().isBlank()) {
             logger.debug("User {} has no approval status, treating system account role {} as approved",
@@ -103,7 +104,7 @@ public class AuthService {
     }
 
     public java.util.List<User> getPendingResidentRegistrations() {
-        return userRepository.findByApprovalStatusOrderByUserIdAsc(STATUS_PENDING);
+        return userRepository.findPendingResidentRegistrations();
     }
 
     public User approveResidentRegistration(Integer userId) {
@@ -112,8 +113,12 @@ public class AuthService {
         if (!DEFAULT_ROLE.equalsIgnoreCase(user.getRole())) {
             throw new InvalidDataException("chỉ duyệt được tài khoản cư dân");
         }
-        if (!STATUS_PENDING.equalsIgnoreCase(user.getApprovalStatus())) {
+        if (!isPendingStatus(user.getApprovalStatus())) {
             throw new InvalidDataException("tài khoản không ở trạng thái chờ duyệt");
+        }
+
+        if (user.getApartmentCode() == null || user.getApartmentCode().isBlank()) {
+            throw new InvalidDataException("Tài khoản chờ duyệt đang thiếu mã căn hộ, không thể duyệt");
         }
 
         Apartment apartment = apartmentRepository.findByRoomNumber(user.getApartmentCode())
@@ -132,11 +137,18 @@ public class AuthService {
     public User rejectResidentRegistration(Integer userId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new InvalidDataException("user không tồn tại"));
-        if (!STATUS_PENDING.equalsIgnoreCase(user.getApprovalStatus())) {
+        if (!isPendingStatus(user.getApprovalStatus())) {
             throw new InvalidDataException("tài khoản không ở trạng thái chờ duyệt");
         }
         user.setApprovalStatus(STATUS_REJECTED);
         return userRepository.save(user);
+    }
+
+    private boolean isPendingStatus(String approvalStatus) {
+        if (approvalStatus == null) {
+            return true;
+        }
+        return STATUS_PENDING.equalsIgnoreCase(approvalStatus.trim()) || approvalStatus.trim().isBlank();
     }
 
     private String normalizeRole(String rawRole) {

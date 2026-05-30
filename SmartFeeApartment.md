@@ -1012,16 +1012,28 @@ Sử dụng **JSON Web Token (JWT)** theo quy trình:
 2. Backend kiểm tra, nếu đúng sẽ tạo JWT chứa userId và role.
 3. Frontend lưu JWT vào localStorage hoặc Cookie và gửi kèm trong Header của các request tiếp theo.
 
+Quy trình tạo tài khoản được kiểm soát như sau:
+
+- Tài khoản quản trị, kế toán và nhân viên được tạo sẵn bởi hệ thống hoặc admin.
+- Người dùng tự đăng ký chỉ tạo yêu cầu cho role cư dân.
+- Khi đăng ký cư dân phải cung cấp mã căn hộ, họ tên và số điện thoại để admin xác minh.
+- Tài khoản mới ở trạng thái `PENDING` và chỉ đăng nhập được sau khi admin duyệt sang `APPROVED`.
+
 ### 5.4.2 Cơ chế Phân quyền (Authorization - RBAC)
 
 Hệ thống áp dụng mô hình phân quyền dựa trên vai trò (Role-based Access Control):
 
-| Chức năng | Cư dân (Resident) | Kế toán (Accountant) | Ban Quản lý (Admin) |
+| Chức năng | Cư dân (Resident) | Kế toán (Accountant) | Nhân viên BQL (Staff) | Quản trị viên (Admin) |
 |---|---|---|---|
-| Xem hóa đơn cá nhân | **Có** | **Có** | **Có** |
-| Nhập chỉ số điện nước | Không | Không | **Có** |
-| Duyệt/Chốt hóa đơn | Không | **Có** | Không |
-| Quản lý cư dân | Không | Không | **Có** |
+| Xem hóa đơn cá nhân | **Có** | **Có** | **Có** | **Có** |
+| Thanh toán hóa đơn | **Có** | Không | Không | **Có** |
+| Gửi yêu cầu hỗ trợ/khiếu nại | **Có** | Không | **Có** | **Có** |
+| Nhập chỉ số điện nước | Không | Không | **Có** | **Có** |
+| Duyệt/Chốt hóa đơn | Không | **Có** | Không | **Có** |
+| Quản lý cư dân và căn hộ | Không | Không | **Có** | **Có** |
+| Quản lý người dùng và phân quyền | Không | Không | Không | **Có** |
+
+> Mỗi tài khoản chỉ được gán một role duy nhất tại thời điểm tạo tài khoản. Role không thay đổi trong vòng đời của cùng một tài khoản.
 
 ### 5.4.3 Bảo vệ dữ liệu (Data Protection)
 
