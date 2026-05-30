@@ -100,6 +100,13 @@ public class AuthService {
             throw new InvalidDataException("căn hộ đã có cư dân được gán");
         }
 
+        // 
+        boolean isAlreadyRegistered = getPendingResidentRegistrations().stream()
+                .anyMatch(u -> u.getApartmentCode().equalsIgnoreCase(normalizedApartmentCode));
+        if (isAlreadyRegistered) {
+            throw new InvalidDataException("Đã có một tài khoảng đang chờ duyệt đăng ký cho căn hộ này");
+        }
+
         User user = new User();
         user.setUsername(normalizedUsername);
         user.setRole(DEFAULT_ROLE);

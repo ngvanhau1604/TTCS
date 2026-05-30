@@ -76,6 +76,15 @@ type NotificationLog = {
   createdAt?: string;
 };
 
+type PendingUser = {
+  userId: number;
+  username: string;
+  fullName: string;
+  apartmentCode: string;
+  phoneNumber: string;
+  approvalStatus: string;
+};
+
 const apiBase = '';
 
 async function apiFetch<T>(path: string, options?: RequestInit, token?: string): Promise<T> {
@@ -135,6 +144,8 @@ export default function App() {
   const [notifications, setNotifications] = useState<NotificationLog[]>([]);
   const [serviceForm, setServiceForm] = useState({ apartmentId: '1', requestType: 'SERVICE', title: '', content: '' });
   const [meterForm, setMeterForm] = useState({ apartmentId: '1', monthYear: '2026-05', elecOld: '1240', elecNew: '1712', waterOld: '92', waterNew: '118' });
+  //
+  const [pendingUsers, setPendingUsers] = useState<PendingUser[]>([]);
 
   useEffect(() => {
     if (!session) return;
@@ -182,10 +193,50 @@ export default function App() {
     }
   }
 
+  // Tính năng phụ cho test case 3: BQL duyệt tài khoản đăng ký
+  async function loadPendingUsers() {
+    if (!session || !(session.role === 'ADMIN')) return;
+    try {
+      const list = await apiFetch<PendingUser[]>('/api/admin/registrations/pending', undefined, session.token);
+      setPendingUsers(list);
+    } catch {
+      // Bỏ qua nếu không load được để không ảnh hưởng đến chức năng chính, vì đây là tính năng phụ cho test case 3
+    }
+  }
+  // Tính năng chấp nhận đăng ký tài khoản mới của BQL, chỉ hiện khi admin đăng nhập
+  async function handleApproveUser(userId: number) {
+    setBusy(true);
+    setError('');
+    try {
+      await apiFetch(`/api/admin/registrations/${userId}/approve`, { method: 'POST' }, session?.token);
+      await loadPendingUsers(); // Load lại danh sách cho mới
+      setError('Đã duyệt tài khoản thành công!');
+    } catch {
+      setError('Lỗi khi duyệt tài khoản. Kiểm tra lại backend.');
+    } finally {
+      setBusy(false);
+    }
+  }
+  // Tính năng từ chối đăng ký tài khoản mới của BQL, chỉ hiện khi admin đăng nhập
+  async function handleRejectUser(userId: number) {
+    setBusy(true);
+    setError('');
+    try {
+      await apiFetch(`/api/admin/registrations/${userId}/reject`, { method: 'POST' }, session?.token);
+      await loadPendingUsers();
+    } catch {
+      setError('Lỗi khi từ chối tài khoản. Kiểm tra lại backend.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   useEffect(() => {
     if (!session) return;
     void loadInvoicesAndNotifications();
     void loadServiceRequests();
+    // Bổ sung tính năng xét duyệt
+    void loadPendingUsers();
   }, [session]);
 
   const currentInvoice = invoices[0];
@@ -684,6 +735,40 @@ export default function App() {
                     <StatusBadge status={item.status} />
                   </div>
                 ))}
+              </div>
+            </div>
+            
+            <div className="mt-6 rounded-3xl border border-white/10 bg-white/5 p-4">
+              <div className="label">Tài khoản Cư dân chờ duyệt</div>
+              <div className="mt-4 space-y-3">
+                {pendingUsers.length === 0 ? (
+                  <div className="text-sm text-slate-400">Không có tài khoản nào đang chờ.</div>
+                ) : (
+                  pendingUsers.map((u) => (
+                    <div key={u.userId} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-white/10 bg-slate-950/40 px-4 py-3">
+                      <div>
+                        <div className="text-sm font-semibold text-white">{u.fullName} (Căn {u.apartmentCode})</div>
+                        <div className="text-xs text-slate-400">@{u.username} - ĐT: {u.phoneNumber}</div>
+                      </div>
+                      <div className="flex gap-2">
+                        <button 
+                          className="btn-primary py-1 px-3 text-xs bg-emerald-500 hover:bg-emerald-400" 
+                          disabled={busy} 
+                          onClick={() => handleApproveUser(u.userId)}
+                        >
+                          Duyệt
+                        </button>
+                        <button 
+                          className="btn-primary py-1 px-3 text-xs bg-rose-500 hover:bg-rose-400" 
+                          disabled={busy} 
+                          onClick={() => handleRejectUser(u.userId)}
+                        >
+                          Từ chối
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           </section>
