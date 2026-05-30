@@ -122,6 +122,11 @@ export default function App() {
     return raw ? (JSON.parse(raw) as UserSession) : null;
   });
   const [loginForm, setLoginForm] = useState({ username: 'admin', password: 'password123' });
+  const [isRegistering, setIsRegistering] = useState(false);
+  const [registerSuccess, setRegisterSuccess] = useState('');
+  const [registerForm, setRegisterForm] = useState({ 
+    username: '', password: '', fullName: '', phoneNumber: '', apartmentCode: '' 
+  });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -203,15 +208,56 @@ export default function App() {
     event.preventDefault();
     setBusy(true);
     setError('');
+    setRegisterSuccess(''); // Xóa thông báo đăng ký nếu có khi người dùng chuyển sang đăng nhập
     try {
-      const result = await apiFetch<UserSession>('/api/auth/login', {
+      // Dùng fetch thuần để dễ dàng bắt chính xác Status 403
+      const response = await fetch(`${apiBase}/api/auth/login`, {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(loginForm),
       });
-      setSession(result);
+      const data = await response.json();
+
+      if (response.ok) {
+        setSession(data as UserSession);
+      } else if (response.status === 403) {
+        // Test case 3: BQL chưa duyệt -> Báo lỗi 403
+        setError(data.error || 'Tài khoản của bạn đang chờ Ban quản lý xét duyệt.');
+      } else {
+        // Test case 1: Sai pass -> Báo lỗi 401
+        setError(data.error || 'Sai tên đăng nhập hoặc mật khẩu.');
+      }
     } catch {
-      setSession(null);
-      setError('Không thể đăng nhập vào backend. Kiểm tra lại server, database hoặc tài khoản.');
+      setError('Không thể kết nối đến server. Kiểm tra lại Backend.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onRegister(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy(true);
+    setError('');
+    setRegisterSuccess('');
+
+    try {
+      const response = await fetch(`${apiBase}/api/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(registerForm),
+      });
+      const data = await response.json();
+
+      if (response.ok) {
+        // Test case 2: Đăng ký thành công -> Hiện thông báo, KHÔNG chuyển về trang login
+        setRegisterSuccess(data.message || 'Đăng ký thành công. Vui lòng chờ duyệt.');
+        // Tùy chọn: Xóa trắng form sau khi gửi
+        setRegisterForm({ username: '', password: '', fullName: '', phoneNumber: '', apartmentCode: '' });
+      } else {
+        setError(data.error || 'Đăng ký thất bại. Vui lòng kiểm tra lại thông tin.');
+      }
+    } catch {
+      setError('Không thể kết nối đến server.');
     } finally {
       setBusy(false);
     }
@@ -356,39 +402,81 @@ export default function App() {
           </section>
 
           <section className="panel">
-            <form className="space-y-5" onSubmit={onLogin}>
-              <div>
-                <p className="label">Đăng nhập</p>
-                <h2 className="mt-2 text-2xl font-bold text-white">Vào hệ thống</h2>
-              </div>
-
-              <div>
-                <label className="label">Tên đăng nhập</label>
-                <input className="input mt-2" value={loginForm.username} onChange={(event) => setLoginForm({ ...loginForm, username: event.target.value })} />
-              </div>
-
-              <div>
-                <label className="label">Mật khẩu</label>
-                <input type="password" className="input mt-2" value={loginForm.password} onChange={(event) => setLoginForm({ ...loginForm, password: event.target.value })} />
-              </div>
-
-              {error ? <p className="rounded-2xl border border-amber-400/20 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">{error}</p> : null}
-
-              <button className="btn-primary w-full" disabled={busy} type="submit">
-                {busy ? 'Đang xử lý...' : 'Đăng nhập'}
-              </button>
-
-              <div className="grid grid-cols-2 gap-3 text-xs text-slate-300">
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-                  <div className="font-semibold text-white">Admin / Staff</div>
-                  <div className="mt-1">Quản lý cư dân, chỉ số và hóa đơn.</div>
+            {!isRegistering ? (
+              // FORM ĐĂNG NHẬP
+              <form className="space-y-5" onSubmit={onLogin}>
+                <div>
+                  <p className="label">Đăng nhập</p>
+                  <h2 className="mt-2 text-2xl font-bold text-white">Vào hệ thống</h2>
                 </div>
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-                  <div className="font-semibold text-white">Resident</div>
-                  <div className="mt-1">Xem hóa đơn, thanh toán, gửi khiếu nại.</div>
+
+                <div>
+                  <label className="label">Tên đăng nhập</label>
+                  <input className="input mt-2" value={loginForm.username} onChange={(e) => setLoginForm({ ...loginForm, username: e.target.value })} />
                 </div>
-              </div>
-            </form>
+
+                <div>
+                  <label className="label">Mật khẩu</label>
+                  <input type="password" className="input mt-2" value={loginForm.password} onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })} />
+                </div>
+
+                {error ? <p className="rounded-2xl border border-rose-400/20 bg-rose-400/10 px-4 py-3 text-sm text-rose-200">{error}</p> : null}
+
+                <button className="btn-primary w-full" disabled={busy} type="submit">
+                  {busy ? 'Đang xử lý...' : 'Đăng nhập'}
+                </button>
+
+                <div className="text-center text-sm text-slate-400 mt-4">
+                  Cư dân mới? <button type="button" onClick={() => {setIsRegistering(true); setError(''); setRegisterSuccess('');}} className="text-sky-400 font-bold hover:underline">Đăng ký tài khoản</button>
+                </div>
+              </form>
+            ) : (
+              // FORM ĐĂNG KÝ CƯ DÂN
+              <form className="space-y-4" onSubmit={onRegister}>
+                <div>
+                  <p className="label">Dành cho Cư dân</p>
+                  <h2 className="mt-2 text-2xl font-bold text-white">Đăng ký tài khoản</h2>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="label">Tên đăng nhập</label>
+                    <input className="input mt-1" required value={registerForm.username} onChange={(e) => setRegisterForm({ ...registerForm, username: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className="label">Mật khẩu</label>
+                    <input type="password" required className="input mt-1" value={registerForm.password} onChange={(e) => setRegisterForm({ ...registerForm, password: e.target.value })} />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="label">Họ và tên</label>
+                  <input className="input mt-1" required value={registerForm.fullName} onChange={(e) => setRegisterForm({ ...registerForm, fullName: e.target.value })} />
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="label">Số điện thoại</label>
+                    <input className="input mt-1" required value={registerForm.phoneNumber} onChange={(e) => setRegisterForm({ ...registerForm, phoneNumber: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className="label">Mã căn hộ (VD: 101)</label>
+                    <input className="input mt-1" required value={registerForm.apartmentCode} onChange={(e) => setRegisterForm({ ...registerForm, apartmentCode: e.target.value })} />
+                  </div>
+                </div>
+
+                {error ? <p className="rounded-2xl border border-rose-400/20 bg-rose-400/10 px-4 py-3 text-sm text-rose-200">{error}</p> : null}
+                {registerSuccess ? <p className="rounded-2xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-200">{registerSuccess}</p> : null}
+
+                <button className="btn-primary w-full bg-emerald-500 hover:bg-emerald-400" disabled={busy} type="submit">
+                  {busy ? 'Đang gửi...' : 'Gửi hồ sơ đăng ký'}
+                </button>
+
+                <div className="text-center text-sm text-slate-400 mt-4">
+                  Đã có tài khoản? <button type="button" onClick={() => {setIsRegistering(false); setError(''); setRegisterSuccess('');}} className="text-sky-400 font-bold hover:underline">Quay lại Đăng nhập</button>
+                </div>
+              </form>
+            )}
           </section>
         </div>
       </main>

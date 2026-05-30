@@ -37,6 +37,7 @@ public class AuthService {
     public Optional<User> authenticate(String username, String rawPassword) {
         logger.debug("Attempting to authenticate user: {}", username);
         Optional<User> user = userRepository.findByUsername(username);
+
         if (user.isEmpty()) {
             logger.warn("User not found: {}", username);
             return Optional.empty();
@@ -45,20 +46,28 @@ public class AuthService {
         User foundUser = user.get();
         logger.debug("Found user: {} with role: {}", foundUser.getUsername(), foundUser.getRole());
 
+        // Check if the password matches
+        boolean matches = passwordEncoder.matches(rawPassword, foundUser.getPassword());
+        // logger.debug("Password match result: {}", matches);
+
+        if (!matches) {
+            logger.warn("Invalid password for user: {}", username);
+            return Optional.empty();
+        }
+
+        // If the password is correct, proceed to check the approval status.
         if (DEFAULT_ROLE.equalsIgnoreCase(foundUser.getRole())) {
             if (!STATUS_APPROVED.equalsIgnoreCase(foundUser.getApprovalStatus())) {
-                logger.warn("User {} is not approved yet: {}", foundUser.getUsername(), foundUser.getApprovalStatus());
-                return Optional.empty();
+                logger.warn("User {} is not approved yet: {}", foundUser.getUsername(), foundUser.getApprovalStatus());          
+                // Ném Exception với thông điệp rõ ràng để Controller bắt và trả về mã 403 cho Frontend
+                throw new InvalidDataException("Tài khoản của bạn đang chờ Ban quản lý xét duyệt. Vui lòng quay lại sau.");
             }
         } else if (foundUser.getApprovalStatus() == null || foundUser.getApprovalStatus().isBlank()) {
             logger.debug("User {} has no approval status, treating system account role {} as approved",
                     foundUser.getUsername(), foundUser.getRole());
         }
 
-        boolean matches = passwordEncoder.matches(rawPassword, foundUser.getPassword());
-        logger.debug("Password match result: {}", matches);
-
-        return matches ? Optional.of(foundUser) : Optional.empty();
+        return Optional.of(foundUser);
     }
 
     public User registerResident(ResidentRegistrationRequest request) {
