@@ -168,7 +168,9 @@ export default function App() {
   const [pendingRegistrations, setPendingRegistrations] = useState<PendingRegistration[]>([]);
   const [serviceForm, setServiceForm] = useState({ apartmentId: '1', requestType: 'SERVICE', title: '', content: '' });
   const [meterForm, setMeterForm] = useState({ apartmentId: '1', monthYear: '2026-05', elecOld: '1240', elecNew: '1712', waterOld: '92', waterNew: '118' });
-  //
+  const now = new Date();
+  const [feeMonth, setFeeMonth] = useState<number>(now.getMonth() + 1);
+  const [feeYear, setFeeYear] = useState<number>(now.getFullYear());
 
   useEffect(() => {
     if (!session) return;
@@ -344,14 +346,43 @@ export default function App() {
   }
 
   async function generateFees() {
+    if (!session) return;
+    // client validation
+    if (!feeMonth || feeMonth < 1 || feeMonth > 12 || !feeYear) {
+      setError('Vui lòng chọn tháng (1-12) và năm hợp lệ');
+      return;
+    }
+
     setBusy(true);
     setError('');
     try {
-      await apiFetch('/api/invoices/admin/calc-fee', {
-        method: 'POST',
-        body: JSON.stringify({ month: 5, year: 2026 }),
-      }, session?.token);
-      setError('Đã kích hoạt tính phí tháng 5/2026.');
+      const resp = await apiFetch<{ totalCalculated?: number; skipped?: number; success?: boolean; message?: string; warning?: string }>(
+        '/api/invoices/admin/calc-fee',
+        {
+          method: 'POST',
+          body: JSON.stringify({ month: feeMonth, year: feeYear }),
+        },
+        session.token
+      );
+
+      // show server message (success or partial warning)
+      if (resp && resp.message) {
+        setError(resp.message);
+      } else if (resp && resp.totalCalculated !== undefined) {
+        setError(`Tính phí hoàn tất cho ${resp.totalCalculated} căn hộ.`);
+      } else {
+        setError('Tính phí hoàn tất.');
+      }
+
+      // if backend reported skipped/duplicates, append warning
+      if (resp && resp.skipped && resp.skipped > 0) {
+        // keep message but ensure warning shown
+        // backend may already include a warning string
+        const warn = resp.warning || `Đã phát hiện ${resp.skipped} bản ghi trùng, xem logs để biết chi tiết.`;
+        setError((prev) => (prev ? prev + ' ' + warn : warn));
+      }
+
+      // refresh list
       await loadInvoicesAndNotifications();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Không gọi được backend để tính phí.');
@@ -634,6 +665,19 @@ export default function App() {
               <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
                 <div className="text-xs uppercase tracking-[0.14em] text-slate-400">Vai trò</div>
                 <div className="mt-1 text-xl font-black text-white">ADMIN</div>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 flex-1">
+                <div className="text-xs uppercase tracking-[0.14em] text-slate-400">Tính phí hàng loạt</div>
+                <div className="mt-2 text-sm text-slate-300">Chọn tháng và năm, sau đó nhấn để tạo hóa đơn cho toàn bộ căn hộ.</div>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <input className="input" type="number" min={1} max={12} value={feeMonth} onChange={(e) => setFeeMonth(Number(e.target.value))} />
+                  <input className="input" type="number" min={2000} max={2100} value={feeYear} onChange={(e) => setFeeYear(Number(e.target.value))} />
+                </div>
+                <div className="mt-3">
+                  <button className="btn-primary w-full" disabled={busy} type="button" onClick={() => generateFees()}>
+                    {busy ? 'Đang xử lý...' : 'Tính phí toàn bộ'}
+                  </button>
+                </div>
               </div>
             </div>
           </section>
