@@ -1,0 +1,4 @@
+@import "tailwindcss";
+
+/* THÊM DÒNG NÀY: Chỉ định Tailwind quét toàn bộ file .jsx trong thư mục pages */
+@source "./pages/**/*.{js,ts,jsx,tsx}";
