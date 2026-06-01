@@ -1,5 +1,7 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+
+// Kiểm tra kỹ xem tên file trong thư mục pages của bạn viết hoa hay viết thường chữ cái đầu nha!
 import LoginRegister from './pages/LoginRegister';
 import AdminDashboard from './pages/AdminDashboard';
 import AdminFeeCalculation from './pages/AdminFeeCalculation';
