@@ -1,7 +1,11 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom'; 
 import { Lock, User, Home, Phone, Eye, EyeOff, Building2, AlertCircle, CheckCircle2 } from 'lucide-react';
 
 export default function LoginRegister() {
+  // Kích hoạt hook điều hướng của react-router-dom
+  const navigate = useNavigate(); 
+
   // Quản lý tab: 'login' hoặc 'register'
   const [activeTab, setActiveTab] = useState('login');
   
@@ -88,7 +92,7 @@ export default function LoginRegister() {
     return Object.keys(newErrors).length === 0;
   };
 
-  // Giả lập xử lý Đăng nhập
+  // Xử lý Đăng nhập và Điều hướng phân quyền
   const handleSubmitLogin = async (e) => {
     e.preventDefault();
     if (!validateLogin()) return;
@@ -98,7 +102,7 @@ export default function LoginRegister() {
 
     try {
       // Giả lập gọi API POST /auth/login
-      await new Promise((resolve, reject) => {
+      const res = await new Promise((resolve, reject) => {
         setTimeout(() => {
           if (loginData.username === 'admin' && loginData.password === 'password123') {
             resolve({ token: 'mock-jwt-token-admin', role: 'ADMIN' });
@@ -114,6 +118,16 @@ export default function LoginRegister() {
         type: 'success',
         message: 'Đăng nhập thành công! Hệ thống đang chuyển hướng tới bảng điều khiển...'
       });
+
+      // Tạo hiệu ứng chờ chuyển trang mượt mà sau khi hiển thị Alert
+      setTimeout(() => {
+        if (res.role === 'ADMIN') {
+          navigate('/admin/dashboard'); 
+        } else if (res.role === 'RESIDENT') {
+          navigate('/resident/dashboard'); 
+        }
+      }, 1200);
+
     } catch (err) {
       setApiAlert({
         type: 'error',
@@ -141,7 +155,7 @@ export default function LoginRegister() {
         message: `Đăng ký thành công căn hộ ${registerData.apartmentNumber}! Mật khẩu của bạn đã được mã hóa Bcrypt bảo mật thành công. Vui lòng chuyển sang Đăng nhập.`
       });
       
-      // Xóa form sau khi thành công
+      // Xóa sạch form sau khi đăng ký thành công
       setRegisterData({
         fullName: '',
         phone: '',
@@ -164,7 +178,7 @@ export default function LoginRegister() {
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 antialiased font-sans">
       <div className="bg-white w-full max-w-5xl rounded-2xl shadow-xl border border-slate-200 overflow-hidden grid md:grid-cols-2">
         
-        {/* Banner giới thiệu */}
+        {/* Banner giới thiệu bên trái */}
         <div className="hidden md:flex bg-slate-900 p-12 flex-col justify-between text-white relative overflow-hidden">
           <div className="absolute inset-0 bg-blue-600 opacity-10 pointer-events-none bg-gradient-to-br from-blue-500 to-transparent"></div>
           <div className="flex items-center gap-3 relative z-10">
@@ -189,7 +203,7 @@ export default function LoginRegister() {
           </div>
         </div>
 
-        {/* Khu vực xử lý các tương tác Form */}
+        {/* Khu vực xử lý Form bên phải */}
         <div className="p-8 md:p-12 flex flex-col justify-center">
           {/* Header Chuyển Đổi Chế Độ Tab UI */}
           <div className="flex border-b border-slate-200 mb-8 p-1 bg-slate-100 rounded-xl">
