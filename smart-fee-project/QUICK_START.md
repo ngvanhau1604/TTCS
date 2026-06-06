@@ -1,58 +1,85 @@
 ## HƯỚNG DẪN CHẠY DỰ ÁN SMARTFEE
 
-### ⚡ Quick Start (5 phút)
+### ⚡ Quick Start (10 phút)
 
-#### 1. Chuẩn bị Database
+#### Prerequisites (Chuẩn bị)
 
+- Java 17+ installed
+- Maven 3.9+ installed  
+- MySQL 8.0+ running locally, OR Docker installed
+
+#### 1. Cấu hình Environment Variables
+
+Create `.env` file in project root:
+
+```env
+SPRING_DATASOURCE_USERNAME=smartfee
+SPRING_DATASOURCE_PASSWORD=smartfee
+JWT_SECRET=0DMjSf5IVIRo4UwCbVDT75RS4hRE0xXfULif093u2iEkKfZc85KLv2vI+aNLi6leOpx/lkPt0G/SAGFQYSboig==
+PAYMENT_WEBHOOK_SECRET=test_webhook_secret
+```
+
+Reference: Copy from `.env.example` file in the project root.
+
+#### 2. Chuẩn bị Database
+
+**Option A: Using Docker (Recommended)**
+
+```powershell
+# Start MySQL via Docker
+docker run -d `
+  -p 3306:3306 `
+  -e MYSQL_ROOT_PASSWORD=root `
+  -e MYSQL_DATABASE=smartfee_db `
+  -e MYSQL_USER=smartfee `
+  -e MYSQL_PASSWORD=smartfee `
+  --name smartfee-db `
+  mysql:8.0
+```
+
+Or use Docker Compose:
 ```bash
-# Mở terminal MySQL
-mysql -u root -p
+docker-compose up -d db
+```
 
-# Copy và chạy commands sau:
+**Option B: Local MySQL Setup**
+
+```powershell
+# Windows PowerShell - Automatic setup
+cd backend
+.\setup-mysql.ps1
+```
+
+Or manually:
+```sql
 CREATE DATABASE smartfee_db;
-
-# Chạy script SQL
-SOURCE D:\PTIT\Thực tập cơ sở\Project\smart-fee-project\backend\src\main\resources\db\01_create_schema.sql;
-SOURCE D:\PTIT\Thực tập cơ sở\Project\smart-fee-project\backend\src\main\resources\db\02_insert_sample_data.sql;
-
-# Kiểm tra
-SELECT * FROM users;
-SELECT * FROM apartments;
+CREATE USER 'smartfee'@'localhost' IDENTIFIED BY 'smartfee';
+GRANT ALL PRIVILEGES ON smartfee_db.* TO 'smartfee'@'localhost';
+FLUSH PRIVILEGES;
 ```
 
-#### 2. Cấu hình ứng dụng
+#### 3. Chạy Backend
 
-File: `backend\src\main\resources\application.properties`
+**Option 1: Using PowerShell Script (Recommended)**
 
-```properties
-spring.datasource.url=jdbc:mysql://localhost:3306/smartfee_db?useSSL=false&allowPublicKeyRetrieval=true
-spring.datasource.username=root
-spring.datasource.password=<your_mysql_password>
-spring.datasource.driver-class-name=com.mysql.cj.jdbc.Driver
-
-spring.jpa.hibernate.ddl-auto=update
-spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.MySQL8Dialect
-
-jwt.secret=supersecretkey
-jwt.expiration=86400000
-
-logging.level.org.springframework=INFO
+```powershell
+cd backend
+.\run-backend.ps1
 ```
 
-#### 3. Chạy ứng dụng
+**Option 2: Manual Command**
 
-```bash
-# Di chuyển vào thư mục backend
-cd smart-fee-project\backend
+```powershell
+cd backend
 
-# Cài dependencies
-mvn clean install
+# Set environment variables
+$env:SPRING_DATASOURCE_USERNAME = 'smartfee'
+$env:SPRING_DATASOURCE_PASSWORD = 'smartfee'
+$env:JWT_SECRET = '0DMjSf5IVIRo4UwCbVDT75RS4hRE0xXfULif093u2iEkKfZc85KLv2vI+aNLi6leOpx/lkPt0G/SAGFQYSboig=='
+$env:PAYMENT_WEBHOOK_SECRET = 'test_webhook_secret'
 
-# Chạy ứng dụng
-# Chạy ứng dụng (bắt buộc cung cấp webhook secret cho xử lý callback)
-# Ví dụ:
-# mvn spring-boot:run -Dpayment.webhook.secret="test_secret"
-mvn spring-boot:run -Dpayment.webhook.secret="<your_webhook_secret>"
+# Run backend
+mvn clean spring-boot:run
 ```
 
 Server sẽ khởi động tại: **http://localhost:8080**

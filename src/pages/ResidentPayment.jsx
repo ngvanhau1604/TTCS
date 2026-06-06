@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   CreditCard, Wallet, QrCode, ArrowLeft, Download, 
@@ -8,20 +8,25 @@ import {
 export default function ResidentPayment() {
   const navigate = useNavigate();
 
-  // Trạng thái hóa đơn giả lập của Căn hộ P102 - Tháng 05/2026
+  const [invoice, setInvoice] = useState(null);
   const [invoiceStatus, setInvoiceStatus] = useState('unpaid'); // 'unpaid' | 'processing' | 'paid'
   const [selectedMethod, setSelectedMethod] = useState('qr'); // 'qr' | 'vnpay' | 'momo'
   const [isLoading, setIsLoading] = useState(false);
 
-  // Chi tiết các khoản phí theo mẫu thiết kế
-  const feeDetails = [
-    { id: 1, name: "Phí dịch vụ quản lý tòa nhà", desc: "Diện tích: 75m² x 10,000đ/m²", amount: 750000, icon: Building, color: "text-blue-600 bg-blue-50" },
-    { id: 2, name: "Phí trông giữ xe tháng 5", desc: "1 Ô tô (500k) + 2 Xe máy (200k)", amount: 700000, icon: Car, color: "text-indigo-600 bg-indigo-50" },
-    { id: 3, name: "Tiền điện tiêu thụ", desc: "Chỉ số: 1250 - 1510 (260 kWh)", amount: 685000, icon: Zap, color: "text-amber-600 bg-amber-50" },
-    { id: 4, name: "Nước sinh hoạt hộ gia đình", desc: "Khối lượng tiêu thụ: 28 m³", amount: 315000, icon: Droplet, color: "text-cyan-600 bg-cyan-50" },
-  ];
+  useEffect(() => {
+    const storedInvoice = localStorage.getItem('smartfee.invoice');
+    if (storedInvoice) {
+      setInvoice(JSON.parse(storedInvoice));
+    }
+  }, []);
 
-  // Tính tổng tiền tự động
+  const feeDetails = invoice ? [
+    { id: 1, name: "Phí dịch vụ quản lý tòa nhà", desc: `Diện tích: ${invoice.area}m² x ${Number(invoice.managementFeeRate).toLocaleString('vi-VN')}đ/m²`, amount: invoice.calculatedFees.managementTotal, icon: Building, color: "text-blue-600 bg-blue-50" },
+    { id: 2, name: "Phí trông giữ xe", desc: "Theo dữ liệu dịch vụ tòa nhà", amount: 700000, icon: Car, color: "text-indigo-600 bg-indigo-50" },
+    { id: 3, name: "Tiền điện tiêu thụ", desc: `Chỉ số: ${invoice.electricityOld} → ${invoice.electricityNew}`, amount: invoice.calculatedFees.electricityTotal, icon: Zap, color: "text-amber-600 bg-amber-50" },
+    { id: 4, name: "Nước sinh hoạt", desc: `Chỉ số: ${invoice.waterOld} → ${invoice.waterNew}`, amount: invoice.calculatedFees.waterTotal, icon: Droplet, color: "text-cyan-600 bg-cyan-50" },
+  ] : [];
+
   const totalAmount = feeDetails.reduce((sum, item) => sum + item.amount, 0);
 
   // --- XỬ LÝ TẢI HÓA ĐƠN ĐIỆN TỬ ---
@@ -68,47 +73,54 @@ export default function ResidentPayment() {
             <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
               <div>
                 <h3 className="text-sm font-black text-slate-800 uppercase tracking-wide">Hóa Đơn Tổng Hợp</h3>
-                <p className="text-[11px] text-slate-400 font-medium mt-0.5">Kỳ thanh toán: Tháng 05/2026</p>
+                <p className="text-[11px] text-slate-400 font-medium mt-0.5">
+                  {invoice ? `Kỳ thanh toán: Tháng ${invoice.month}` : 'Chưa có hóa đơn từ BQL'}
+                </p>
               </div>
               
-              {/* NÚT TẢI HÓA ĐƠN ĐƯỢC THÊM THEO GIAO DIỆN MẪU */}
               <button 
                 type="button"
                 onClick={handleDownloadInvoice}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 border border-blue-100 text-blue-600 font-bold text-xs rounded-xl transition-all shadow-sm"
-                title="Tải hóa đơn PDF về máy"
+                className={`flex items-center gap-1.5 px-3 py-1.5 border text-xs font-bold rounded-xl transition-all shadow-sm ${invoice ? 'bg-blue-50 hover:bg-blue-100 border-blue-100 text-blue-600' : 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'}`}
+                title={invoice ? 'Tải hóa đơn PDF về máy' : 'Chờ BQL tạo hóa đơn'}
+                disabled={!invoice}
               >
                 <Download className="w-3.5 h-3.5" /> Tải về
               </button>
             </div>
 
-            {/* DANH SÁCH CHI TIẾT */}
             <div className="divide-y divide-slate-100 p-5 pt-2">
-              {feeDetails.map((fee) => {
-                const IconComponent = fee.icon;
-                return (
-                  <div key={fee.id} className="py-4 flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-3">
-                      <div className={`p-2.5 rounded-xl shrink-0 ${fee.color}`}>
-                        <IconComponent className="w-4 h-4" />
+              {invoice ? (
+                feeDetails.map((fee) => {
+                  const IconComponent = fee.icon;
+                  return (
+                    <div key={fee.id} className="py-4 flex items-center justify-between gap-4">
+                      <div className="flex items-center gap-3">
+                        <div className={`p-2.5 rounded-xl shrink-0 ${fee.color}`}>
+                          <IconComponent className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <h4 className="text-xs font-bold text-slate-800">{fee.name}</h4>
+                          <p className="text-[10px] text-slate-400 mt-0.5 font-medium">{fee.desc}</p>
+                        </div>
                       </div>
-                      <div>
-                        <h4 className="text-xs font-bold text-slate-800">{fee.name}</h4>
-                        <p className="text-[10px] text-slate-400 mt-0.5 font-medium">{fee.desc}</p>
-                      </div>
+                      <span className="text-xs font-black text-slate-900 tracking-tight shrink-0">
+                        {fee.amount.toLocaleString('vi-VN')} đ
+                      </span>
                     </div>
-                    <span className="text-xs font-black text-slate-900 tracking-tight shrink-0">
-                      {fee.amount.toLocaleString('vi-VN')} đ
-                    </span>
-                  </div>
-                );
-              })}
+                  );
+                })
+              ) : (
+                <div className="py-16 text-center text-slate-500">
+                  <p className="text-sm font-bold text-slate-800">Hiện chưa có phí</p>
+                  <p className="text-xs mt-2">Ban quản lý chưa chốt phí cho tháng này. Vui lòng quay lại sau khi BQL đã tính phí hoặc thông báo lịch tự động.</p>
+                </div>
+              )}
             </div>
 
-            {/* TỔNG KẾT TIỀN */}
             <div className="bg-slate-900 text-white p-5 flex justify-between items-center">
               <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Tổng cộng cần thanh toán</span>
-              <span className="text-lg font-black tracking-tight">{totalAmount.toLocaleString('vi-VN')} đ</span>
+              <span className="text-lg font-black tracking-tight">{invoice ? totalAmount.toLocaleString('vi-VN') : '0'} đ</span>
             </div>
           </div>
 
@@ -118,7 +130,25 @@ export default function ResidentPayment() {
             <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
               <h3 className="text-sm font-black text-slate-800 uppercase tracking-wide">Phương thức nộp tiền</h3>
               
-              {invoiceStatus === 'paid' ? (
+              {!invoice ? (
+                <div className="py-10 text-center space-y-3">
+                  <div className="mx-auto w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center">
+                    <Info className="w-5 h-5 text-slate-400" />
+                  </div>
+                  <p className="text-sm font-bold text-slate-900">Chưa có hóa đơn để thanh toán</p>
+                  <p className="text-[11px] text-slate-500 px-4">BQL chưa thực hiện chốt phí. Bạn sẽ thấy chi tiết khi admin bấm tính phí hoặc đến ngày tự động tính phí.</p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const storedInvoice = localStorage.getItem('smartfee.invoice');
+                      if (storedInvoice) setInvoice(JSON.parse(storedInvoice));
+                    }}
+                    className="mt-4 px-4 py-2 text-xs font-bold uppercase tracking-wider text-slate-700 bg-slate-100 rounded-full hover:bg-slate-200 transition-all"
+                  >
+                    Làm mới dữ liệu
+                  </button>
+                </div>
+              ) : invoiceStatus === 'paid' ? (
                 /* Giao diện khi đã đóng tiền xong */
                 <div className="py-6 text-center space-y-3 animate-fadeIn">
                   <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mx-auto shadow-inner">
