@@ -10,9 +10,8 @@ echo ======================================
 echo.
 
 REM Load environment variables
-if exist "..\..\.env" (
-    echo Loading environment from ..\..\.env
-    for /f "delims=" %%x in ('..\..\.env') do (
+if exist "..\.env" (
+    for /f "usebackq delims=" %%x in ("..\.env") do (
         set "%%x"
     )
 ) else (
