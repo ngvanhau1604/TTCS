@@ -8,7 +8,7 @@ if errorlevel 1 (
 )
 
 set MYSQL_PATH=%cd%\mysql.exe
-set DB_PATH=D:\PTIT\Thực tập cơ sở\Project\smart-fee-project\backend\src\main\resources\db
+set DB_PATH=%~dp0smart-fee-project\backend\src\main\resources\db
 
 echo.
 echo Importing database schema...
