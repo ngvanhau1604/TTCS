@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Calculator, FileText, CheckCircle, AlertCircle, ArrowLeft, X } from 'lucide-react';
 
