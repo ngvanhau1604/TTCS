@@ -8,18 +8,17 @@ import {
 export default function ResidentPayment() {
   const navigate = useNavigate();
 
-  const [invoice, setInvoice] = useState(null);
+  // SỬA TẠI ĐÂY: Khởi tạo giá trị ban đầu cho State bằng hàm đọc trực tiếp từ localStorage
+  const [invoice, setInvoice] = useState(() => {
+    const storedInvoice = localStorage.getItem('smartfee.invoice');
+    return storedInvoice ? JSON.parse(storedInvoice) : null;
+  });
+
   const [invoiceStatus, setInvoiceStatus] = useState('unpaid'); // 'unpaid' | 'processing' | 'paid'
   const [selectedMethod, setSelectedMethod] = useState('qr'); // 'qr' | 'vnpay' | 'momo'
   const [isLoading, setIsLoading] = useState(false);
 
-  useEffect(() => {
-    const storedInvoice = localStorage.getItem('smartfee.invoice');
-    if (storedInvoice) {
-      setInvoice(JSON.parse(storedInvoice));
-    }
-  }, []);
-
+  // CÙNG SỬA: Xóa bỏ hoàn toàn block useEffect chạy lúc mount trước đó
   const feeDetails = invoice ? [
     { id: 1, name: "Phí dịch vụ quản lý tòa nhà", desc: `Diện tích: ${invoice.area}m² x ${Number(invoice.managementFeeRate).toLocaleString('vi-VN')}đ/m²`, amount: invoice.calculatedFees.managementTotal, icon: Building, color: "text-blue-600 bg-blue-50" },
     { id: 2, name: "Phí trông giữ xe", desc: "Theo dữ liệu dịch vụ tòa nhà", amount: 700000, icon: Car, color: "text-indigo-600 bg-indigo-50" },
