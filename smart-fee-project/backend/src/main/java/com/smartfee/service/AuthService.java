@@ -104,7 +104,7 @@ public class AuthService {
         boolean isAlreadyRegistered = getPendingResidentRegistrations().stream()
                 .anyMatch(u -> u.getApartmentCode().equalsIgnoreCase(normalizedApartmentCode));
         if (isAlreadyRegistered) {
-            throw new InvalidDataException("Đã có một tài khoảng đang chờ duyệt đăng ký cho căn hộ này");
+            throw new InvalidDataException("Đã có một tài khoản đang chờ duyệt đăng ký cho căn hộ này");
         }
 
         User user = new User();
