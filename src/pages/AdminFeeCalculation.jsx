@@ -13,29 +13,32 @@ export default function AdminFeeCalculation() {
   });
 
   const [notifications, setNotifications] = useState([]);
-
-  const [calculatedFees, setCalculatedFees] = useState({
-    managementTotal: 0, electricityTotal: 0, waterTotal: 0, grandTotal: 0
-  });
-
   const [isSaved, setIsSaved] = useState(false);
   const [error, setError] = useState('');
 
-  useEffect(() => {
+  // SỬA TẠI ĐÂY: Thay thế state calculatedFees và useEffect bằng useMemo
+  const calculatedFees = useMemo(() => {
     const management = (Number(formData.managementFeeRate) * Number(formData.area)) || 0;
     const elecDiff = (Number(formData.electricityNew) - Number(formData.electricityOld)) || 0;
     const electricity = elecDiff > 0 ? elecDiff * 2500 : 0;
     const waterDiff = (Number(formData.waterNew) - Number(formData.waterOld)) || 0;
     const water = waterDiff > 0 ? waterDiff * 11000 : 0;
 
-    setCalculatedFees({
+    return {
       managementTotal: management,
       electricityTotal: electricity,
       waterTotal: water,
       grandTotal: management + electricity + water
-    });
-  }, [formData]);
-
+    };
+  }, [
+    formData.managementFeeRate, 
+    formData.area, 
+    formData.electricityNew, 
+    formData.electricityOld, 
+    formData.waterNew, 
+    formData.waterOld
+  ]);
+  
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
     setIsSaved(false);
