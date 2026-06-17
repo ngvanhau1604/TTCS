@@ -5,6 +5,7 @@ import com.smartfee.util.JwtFilter;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
@@ -30,8 +31,9 @@ public class SecurityConfig {
     }
 
     @Bean
-    DaoAuthenticationProvider provider = new DaoAuthenticationProvider();
-    provider.setUserDetailsService(userDetailsService);
+    public DaoAuthenticationProvider authenticationProvider() {
+        DaoAuthenticationProvider provider = new DaoAuthenticationProvider();
+        provider.setUserDetailsService(userDetailsService);
         provider.setPasswordEncoder(passwordEncoder());
         return provider;
     }
@@ -41,53 +43,28 @@ public class SecurityConfig {
         return config.getAuthenticationManager();
     }
 
-     @Bean
-     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-         http
-                 .csrf(csrf -> csrf.disable())
-                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                 .authorizeHttpRequests(auth -> auth
-                         .requestMatchers("/api/auth/login", "/api/auth/register", "/api/auth/register/resident")
-                         .permitAll()
-                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
-+                        // 1. Chỉ ADMIN hoặc STAFF mới được ghi nhận chỉ số điện nước mới
-+                        .requestMatchers(HttpMethod.POST, "/api/meter-readings").hasAnyRole("ADMIN", "STAFF")
-+                        // 2. Chỉ ADMIN hoặc ACCOUNTANT mới được gạch nợ hóa đơn thủ công
-+                        .requestMatchers(HttpMethod.POST, "/api/invoices/*/mark-paid").hasAnyRole("ADMIN", "ACCOUNTANT")
-                         // Webhook endpoint is open (no JWT) - verification enforced by PaymentService
-                         // via HMAC secret
-                         .requestMatchers("/api/payments/webhook").permitAll()
-                         .requestMatchers("/api/invoices/admin/**").hasAnyRole("ADMIN", "ACCOUNTANT")
-                         .requestMatchers("/api/payments/retry").hasAnyRole("ADMIN", "ACCOUNTANT")
-                         .anyRequest().authenticated())
-                 .authenticationProvider(authenticationProvider())
-                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
- 
-         return http.build();
-     }
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+        http
+                .csrf(csrf -> csrf.disable())
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .authorizeHttpRequests(auth -> auth
+                        .requestMatchers("/api/auth/login", "/api/auth/register", "/api/auth/register/resident")
+                        .permitAll()
+                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
+                        // 1. Chỉ ADMIN hoặc STAFF mới được ghi nhận chỉ số điện nước mới
+                        .requestMatchers(HttpMethod.POST, "/api/meter-readings").hasAnyRole("ADMIN", "STAFF")
+                        // 2. Chỉ ADMIN hoặc ACCOUNTANT mới được gạch nợ hóa đơn thủ công
+                        .requestMatchers(HttpMethod.POST, "/api/invoices/*/mark-paid").hasAnyRole("ADMIN", "ACCOUNTANT")
+                        // Webhook endpoint is open (no JWT) - verification enforced by PaymentService
+                        // via HMAC secret
+                        .requestMatchers("/api/payments/webhook").permitAll()
+                        .requestMatchers("/api/invoices/admin/**").hasAnyRole("ADMIN", "ACCOUNTANT")
+                        .requestMatchers("/api/payments/retry").hasAnyRole("ADMIN", "ACCOUNTANT")
+                        .anyRequest().authenticated())
+                .authenticationProvider(authenticationProvider())
+                .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
 
-     @Bean
-     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-         http
-                 .csrf(csrf -> csrf.disable())
-                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                 .authorizeHttpRequests(auth -> auth
-                         .requestMatchers("/api/auth/login", "/api/auth/register", "/api/auth/register/resident")
-                         .permitAll()
-                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
-+                        // 1. Chỉ ADMIN hoặc STAFF mới được ghi nhận chỉ số điện nước mới
-+                        .requestMatchers(HttpMethod.POST, "/api/meter-readings").hasAnyRole("ADMIN", "STAFF")
-+                        // 2. Chỉ ADMIN hoặc ACCOUNTANT mới được gạch nợ hóa đơn thủ công
-+                        .requestMatchers(HttpMethod.POST, "/api/invoices/*/mark-paid").hasAnyRole("ADMIN", "ACCOUNTANT")
-                         // Webhook endpoint is open (no JWT) - verification enforced by PaymentService
-                         // via HMAC secret
-                         .requestMatchers("/api/payments/webhook").permitAll()
-                         .requestMatchers("/api/invoices/admin/**").hasAnyRole("ADMIN", "ACCOUNTANT")
-                         .requestMatchers("/api/payments/retry").hasAnyRole("ADMIN", "ACCOUNTANT")
-                         .anyRequest().authenticated())
-                 .authenticationProvider(authenticationProvider())
-                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
- 
-         return http.build();
-     }
+        return http.build();
+    }
 }
