@@ -7,7 +7,5 @@ RUN mvn -B -DskipTests package
 FROM eclipse-temurin:17-jre
 WORKDIR /app
 COPY --from=builder /build/target/*smart-fee-backend*.jar /app/app.jar
-COPY docker-entrypoint.sh /app/docker-entrypoint.sh
-RUN chmod +x /app/docker-entrypoint.sh
 EXPOSE 8080
-ENTRYPOINT ["/app/docker-entrypoint.sh"]
+ENTRYPOINT ["sh", "-c", "if [ -z \"$PAYMENT_WEBHOOK_SECRET\" ]; then echo \"ERROR: PAYMENT_WEBHOOK_SECRET is not set. Set it before running the container.\"; exit 1; fi; java -Dpayment.webhook.secret=$PAYMENT_WEBHOOK_SECRET -jar /app/app.jar"]

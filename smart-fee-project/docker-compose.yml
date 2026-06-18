@@ -20,6 +20,7 @@ services:
       - SPRING_DATASOURCE_USERNAME=smartfee
       - SPRING_DATASOURCE_PASSWORD=smartfee
       - PAYMENT_WEBHOOK_SECRET=${PAYMENT_WEBHOOK_SECRET}
+      - JWT_SECRET=${JWT_SECRET}
       # JVM opts can be provided via env
     ports:
       - "8080:8080"

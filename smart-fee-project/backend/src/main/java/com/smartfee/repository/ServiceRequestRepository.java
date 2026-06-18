@@ -9,4 +9,6 @@ public interface ServiceRequestRepository extends JpaRepository<ServiceRequest, 
     List<ServiceRequest> findByRequestTypeOrderByCreatedAtDesc(String requestType);
 
     List<ServiceRequest> findByStatusOrderByCreatedAtDesc(String status);
+
+    List<ServiceRequest> findByStatusAndUser_UsernameOrderByCreatedAtDesc(String status, String username);
 }

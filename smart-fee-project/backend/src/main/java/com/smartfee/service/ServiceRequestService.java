@@ -60,6 +60,10 @@ public class ServiceRequestService {
         return serviceRequestRepository.findByStatusOrderByCreatedAtDesc(status);
     }
 
+    public List<ServiceRequest> findAllByStatusAndUsername(String status, String username) {
+        return serviceRequestRepository.findByStatusAndUser_UsernameOrderByCreatedAtDesc(status, username);
+    }
+
     public ServiceRequest reviewRequest(Integer requestId, String reviewerUsername, String status, String note) {
         ServiceRequest serviceRequest = serviceRequestRepository.findById(requestId)
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy yêu cầu"));
