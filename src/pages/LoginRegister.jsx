@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom'; 
 import { Lock, User, Home, Phone, Eye, EyeOff, Building2, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { apiFetch, session } from '../utils/api';
 
 export default function LoginRegister() {
   // Kích hoạt hook điều hướng của react-router-dom
@@ -101,18 +102,16 @@ export default function LoginRegister() {
     setApiAlert(null);
 
     try {
-      // Giả lập gọi API POST /auth/login
-      const res = await new Promise((resolve, reject) => {
-        setTimeout(() => {
-          if (loginData.username === 'admin' && loginData.password === 'password123') {
-            resolve({ token: 'mock-jwt-token-admin', role: 'ADMIN' });
-          } else if (loginData.username === 'cu_dan_01' && loginData.password === 'password123') {
-            resolve({ token: 'mock-jwt-token-resident', role: 'RESIDENT' });
-          } else {
-            reject(new Error('Tài khoản hoặc mật khẩu không chính xác trên hệ thống.'));
-          }
-        }, 1500);
+      const res = await apiFetch('/api/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({
+          username: loginData.username,
+          password: loginData.password
+        })
       });
+
+      // Lưu token, role, và username vào session
+      session.save(res.token, res.role, res.username);
 
       setApiAlert({
         type: 'success',
@@ -121,7 +120,7 @@ export default function LoginRegister() {
 
       // Tạo hiệu ứng chờ chuyển trang mượt mà sau khi hiển thị Alert
       setTimeout(() => {
-        if (res.role === 'ADMIN') {
+        if (res.role === 'ADMIN' || res.role === 'ACCOUNTANT') {
           navigate('/admin/dashboard'); 
         } else if (res.role === 'RESIDENT') {
           navigate('/resident/dashboard'); 
@@ -138,7 +137,7 @@ export default function LoginRegister() {
     }
   };
 
-  // Giả lập xử lý Đăng ký
+  // Xử lý Đăng ký gửi về backend
   const handleSubmitRegister = async (e) => {
     e.preventDefault();
     if (!validateRegister()) return;
@@ -147,12 +146,20 @@ export default function LoginRegister() {
     setApiAlert(null);
 
     try {
-      // Giả lập gọi API đăng ký hệ thống cư dân
-      await new Promise((resolve) => setTimeout(resolve, 1800));
+      const res = await apiFetch('/api/auth/register', {
+        method: 'POST',
+        body: JSON.stringify({
+          username: registerData.username,
+          password: registerData.password,
+          fullName: registerData.fullName,
+          phoneNumber: registerData.phone,
+          apartmentCode: registerData.apartmentNumber
+        })
+      });
 
       setApiAlert({
         type: 'success',
-        message: `Đăng ký thành công căn hộ ${registerData.apartmentNumber}! Mật khẩu của bạn đã được mã hóa Bcrypt bảo mật thành công. Vui lòng chuyển sang Đăng nhập.`
+        message: res.message || `Đăng ký thành công căn hộ ${registerData.apartmentNumber}! Vui lòng chờ Ban quản lý xét duyệt.`
       });
       
       // Xóa sạch form sau khi đăng ký thành công
@@ -167,7 +174,7 @@ export default function LoginRegister() {
     } catch (err) {
       setApiAlert({
         type: 'error',
-        message: 'Đăng ký thất bại. Số căn hộ đã có chủ hộ đăng ký trước đó.'
+        message: err.message || 'Đăng ký thất bại. Vui lòng kiểm tra lại thông tin.'
       });
     } finally {
       setIsLoading(false);
@@ -311,14 +318,16 @@ export default function LoginRegister() {
               <button
                 type="submit"
                 disabled={isLoading}
-                className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-semibold rounded-xl shadow-md shadow-blue-100 transition-all duration-150 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed mt-2"
+                className="w-full py-3 bg-slate-900 hover:bg-slate-800 active:bg-slate-950 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-md flex items-center justify-center gap-1.5 disabled:opacity-50"
               >
                 {isLoading ? (
-                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                 ) : (
-                  'Xác thực tài khoản'
+                  <span>Đăng nhập hệ thống</span>
                 )}
               </button>
+
+
             </form>
           ) : (
             /* FORM ĐĂNG KÝ CƯ DÂN */

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom'; 
 import { 
   Building2, LayoutDashboard, Users, BarChart3, 
@@ -6,29 +6,70 @@ import {
   ArrowUpRight, TrendingUp, Filter, ChevronRight, Calculator, X,
   LogOut // <-- Thêm icon LogOut ở đây
 } from 'lucide-react';
+import { apiFetch, session } from '../utils/api';
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
   
   // State quản lý danh sách thông báo (để đẩy lên giao diện real-time)
-  const [announcements, setAnnouncements] = useState([
-    { id: 1, title: "Thông báo chốt số điện nước T5", content: "Yêu cầu cư dân kiểm tra đối chiếu chỉ số công tơ..." },
-    { id: 2, title: "Lịch bảo trì thang máy tòa A", content: "Tạm dừng hoạt động thang số 03 từ 14h - 16h ngày..." }
-  ]);
+  const [announcements, setAnnouncements] = useState([]);
 
   // State quản lý Modal Tạo thông báo
   const [isNoticeModalOpen, setIsNoticeModalOpen] = useState(false);
   const [newNotice, setNewNotice] = useState({ title: '', content: '' });
 
-  // Giả lập danh sách hóa đơn
-  const [recentInvoices] = useState([
-    { id: "HD-2026-001", room: "P102", type: "Phí dịch vụ + Điện nước", amount: "2,450,000", status: "Paid", date: "31/05/2026" },
-    { id: "HD-2026-002", room: "P504", type: "Phí quản lý tháng 5", amount: "1,200,000", status: "Unpaid", date: "30/05/2026" },
-    { id: "HD-2026-003", room: "P312", type: "Phí gửi xe máy/ô tô", amount: "850,000", status: "Pending", date: "29/05/2026" },
-    { id: "HD-2026-004", room: "P701", type: "Phí dịch vụ tổng hợp", amount: "3,110,000", status: "Paid", date: "28/05/2026" },
-    { id: "HD-2026-005", room: "P208", type: "Phí điện nước tiêu thụ", amount: "1,680,000", status: "Unpaid", date: "28/05/2026" }
-  ]);
+  // Quản lý hóa đơn và chỉ số thật từ backend
+  const [invoices, setInvoices] = useState([]);
+  const [stats, setStats] = useState({
+    totalAmount: 0,
+    paid: 0,
+    pending: 0,
+    overdue: 0,
+    totalInvoices: 0
+  });
+  const [disputesCount, setDisputesCount] = useState(0);
+
+  // Load data từ backend
+  useEffect(() => {
+    async function loadData() {
+      try {
+        const invoicesData = await apiFetch('/api/invoices');
+        setInvoices(invoicesData);
+
+        const statsData = await apiFetch('/api/invoices/stats');
+        setStats(statsData);
+
+        const disputes = await apiFetch('/api/service-requests?status=PENDING');
+        setDisputesCount(disputes.length);
+
+        const notifs = await apiFetch('/api/notifications');
+        const mappedNotifs = notifs.map(n => ({
+          id: n.notificationId,
+          title: n.title,
+          content: n.message
+        }));
+        setAnnouncements(mappedNotifs);
+      } catch (err) {
+        console.error("Error loading dashboard data:", err);
+      }
+    }
+    loadData();
+  }, []);
+
+  const recentInvoices = invoices.map(inv => ({
+    id: `HD-${inv.invoiceId}`,
+    room: `P${inv.apartment?.roomNumber || 'N/A'}`,
+    type: 'Phí dịch vụ tổng hợp',
+    amount: inv.totalAmount ? inv.totalAmount.toLocaleString('vi-VN') : '0',
+    status: inv.status,
+    date: inv.billingMonth ? new Date(inv.billingMonth).toLocaleDateString('vi-VN') : 'N/A'
+  }));
+
+  const paidCount = stats?.paid || 0;
+  const unpaidCount = (stats?.pending || 0) + (stats?.overdue || 0);
+  const totalCount = paidCount + unpaidCount;
+  const progressPercent = totalCount > 0 ? ((paidCount / totalCount) * 100).toFixed(1) : "0.0";
 
   const chartData = [
     { month: 'T1', value: 65 }, { month: 'T2', value: 78 }, { month: 'T3', value: 85 }, { month: 'T4', value: 92 }, { month: 'T5', value: 74 }
@@ -41,19 +82,34 @@ export default function AdminDashboard() {
   );
 
   // Xử lý tạo thông báo mới đẩy lên bảng liền
-  const handleCreateNotice = (e) => {
+  const handleCreateNotice = async (e) => {
     e.preventDefault();
     if (!newNotice.title.trim() || !newNotice.content.trim()) return;
 
-    const noticeObj = {
-      id: Date.now(),
-      title: newNotice.title,
-      content: newNotice.content
-    };
+    try {
+      await apiFetch('/api/notifications', {
+        method: 'POST',
+        body: JSON.stringify({
+          title: newNotice.title,
+          message: newNotice.content
+        })
+      });
+      alert("Đăng thông báo tới cư dân thành công!");
+      
+      // Reload announcements
+      const notifs = await apiFetch('/api/notifications');
+      const mappedNotifs = notifs.map(n => ({
+        id: n.notificationId,
+        title: n.title,
+        content: n.message
+      }));
+      setAnnouncements(mappedNotifs);
 
-    setAnnouncements([noticeObj, ...announcements]); // Đẩy lên đầu danh sách hiển thị
-    setNewNotice({ title: '', content: '' });
-    setIsNoticeModalOpen(false);
+      setNewNotice({ title: '', content: '' });
+      setIsNoticeModalOpen(false);
+    } catch (err) {
+      alert("Lỗi khi đăng thông báo: " + err.message);
+    }
   };
 
   // Hàm xử lý Đăng xuất
@@ -96,7 +152,9 @@ export default function AdminDashboard() {
               <MessageSquare className="w-5 h-5" />
               <span>Xử lý tranh chấp</span>
             </div>
-            <span className="bg-rose-500 text-white text-xs px-2 py-0.5 rounded-full font-bold">3</span>
+            {disputesCount > 0 && (
+              <span className="bg-rose-500 text-white text-xs px-2 py-0.5 rounded-full font-bold">{disputesCount}</span>
+            )}
           </button>
         </nav>
 
@@ -155,9 +213,11 @@ export default function AdminDashboard() {
             <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-start justify-between">
               <div className="space-y-2">
                 <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Doanh thu thu về</span>
-                <p className="text-2xl font-black text-slate-900">428.5M đ</p>
+                <p className="text-2xl font-black text-slate-900">
+                  {stats?.totalAmount ? (stats.totalAmount / 1000000).toFixed(1) + "M đ" : "0đ"}
+                </p>
                 <div className="flex items-center gap-1 text-xs font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-lg w-max">
-                  <TrendingUp className="w-3.5 h-3.5" /> <span>+12.4% so với T4</span>
+                  <TrendingUp className="w-3.5 h-3.5" /> <span>Hệ thống tự động cập nhật</span>
                 </div>
               </div>
               <div className="p-3 bg-blue-50 text-blue-600 rounded-xl"><DollarSign className="w-6 h-6" /></div>
@@ -166,9 +226,9 @@ export default function AdminDashboard() {
             <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-start justify-between">
               <div className="space-y-2">
                 <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Tiến độ thu phí</span>
-                <p className="text-2xl font-black text-slate-900">84.2 %</p>
+                <p className="text-2xl font-black text-slate-900">{progressPercent}%</p>
                 <div className="w-28 bg-slate-100 h-2 rounded-full overflow-hidden mt-2">
-                  <div className="bg-emerald-500 h-full rounded-full" style={{ width: '84.2%' }}></div>
+                  <div className="bg-emerald-500 h-full rounded-full" style={{ width: `${progressPercent}%` }}></div>
                 </div>
               </div>
               <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl"><CheckCircle className="w-6 h-6" /></div>
@@ -177,7 +237,7 @@ export default function AdminDashboard() {
             <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-start justify-between">
               <div className="space-y-2">
                 <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Căn hộ chưa nộp</span>
-                <p className="text-2xl font-black text-slate-900">32 / 240</p>
+                <p className="text-2xl font-black text-slate-900">{unpaidCount} / {totalCount}</p>
                 <span className="text-xs text-slate-400 font-medium block">Cần gửi thông báo nhắc phí</span>
               </div>
               <div className="p-3 bg-rose-50 text-rose-600 rounded-xl"><AlertTriangle className="w-6 h-6" /></div>
@@ -186,7 +246,7 @@ export default function AdminDashboard() {
             <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-start justify-between">
               <div className="space-y-2">
                 <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Tranh chấp cần xử lý</span>
-                <p className="text-2xl font-black text-slate-900">03 vụ</p>
+                <p className="text-2xl font-black text-slate-900">{disputesCount.toString().padStart(2, '0')} vụ</p>
                 <span onClick={() => navigate('/admin/disputes')} className="text-xs font-bold text-rose-600 hover:text-rose-700 transition-all underline cursor-pointer flex items-center gap-0.5">
                   Xem chi tiết <ArrowUpRight className="w-3 h-3" />
                 </span>
@@ -262,8 +322,8 @@ export default function AdminDashboard() {
                       <td className="py-3.5 px-5 text-right font-black text-slate-900">{invoice.amount}</td>
                       <td className="py-3.5 px-5 text-center">
                         <span className={`inline-block px-2.5 py-1 rounded-full text-xs font-bold border ${
-                          invoice.status === 'Paid' ? 'bg-emerald-50 border-emerald-100 text-emerald-700' : 'bg-rose-50 border-rose-100 text-rose-700'
-                        }`}>{invoice.status === 'Paid' ? 'Đã nộp' : 'Chưa nộp'}</span>
+                          invoice.status === 'PAID' ? 'bg-emerald-50 border-emerald-100 text-emerald-700' : 'bg-rose-50 border-rose-100 text-rose-700'
+                        }`}>{invoice.status === 'PAID' ? 'Đã nộp' : 'Chưa nộp'}</span>
                       </td>
                     </tr>
                   ))}

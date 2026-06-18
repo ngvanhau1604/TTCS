@@ -1,18 +1,50 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   Building2, LayoutDashboard, Users, BarChart3, Calculator,
   TrendingUp, TrendingDown, DollarSign, Download,
   MessageSquare // <-- Đã thêm icon này vào để tránh lỗi trắng trang
 } from 'lucide-react';
+import { apiFetch } from '../utils/api';
 
 export default function AdminAnalytics() {
   const navigate = useNavigate();
+  const [invoices, setInvoices] = useState([]);
+  const [disputesCount, setDisputesCount] = useState(0);
+
+  useEffect(() => {
+    async function loadData() {
+      try {
+        const data = await apiFetch('/api/invoices');
+        setInvoices(data);
+        const disputes = await apiFetch('/api/service-requests?status=PENDING');
+        setDisputesCount(disputes.length);
+      } catch (err) {
+        console.error("Lỗi tải báo cáo phân tích:", err);
+      }
+    }
+    loadData();
+  }, []);
+
+  // Tính toán dữ liệu tài chính từ invoices
+  const totalExpected = invoices.reduce((sum, inv) => sum + (inv.totalAmount || 0), 0);
+
+  const elecSum = invoices.filter(inv => inv.status === 'PAID').reduce((sum, inv) => sum + (inv.electricFee || 0), 0);
+  const elecTotal = invoices.reduce((sum, inv) => sum + (inv.electricFee || 0), 0);
+  const elecRatio = elecTotal > 0 ? Math.round((elecSum / elecTotal) * 100) : 0;
+
+  const waterSum = invoices.filter(inv => inv.status === 'PAID').reduce((sum, inv) => sum + (inv.waterFee || 0), 0);
+  const waterTotal = invoices.reduce((sum, inv) => sum + (inv.waterFee || 0), 0);
+  const waterRatio = waterTotal > 0 ? Math.round((waterSum / waterTotal) * 100) : 0;
+
+  const mgmtSum = invoices.filter(inv => inv.status === 'PAID').reduce((sum, inv) => sum + (inv.managementFee || 0), 0);
+  const mgmtTotal = invoices.reduce((sum, inv) => sum + (inv.managementFee || 0), 0);
+  const mgmtRatio = mgmtTotal > 0 ? Math.round((mgmtSum / mgmtTotal) * 100) : 0;
 
   const analyticsData = [
-    { title: "Tổng thu phí quản lý", amount: "245,600,000", ratio: 92, color: "bg-blue-600" },
-    { title: "Tổng thu tiền điện hộ dân", amount: "118,450,000", ratio: 84, color: "bg-amber-500" },
-    { title: "Tổng thu nước sinh hoạt", amount: "64,450,000", ratio: 78, color: "bg-cyan-500" },
+    { title: "Tổng thu phí quản lý", amount: mgmtSum.toLocaleString('vi-VN'), ratio: mgmtRatio, color: "bg-blue-600" },
+    { title: "Tổng thu tiền điện hộ dân", amount: elecSum.toLocaleString('vi-VN'), ratio: elecRatio, color: "bg-amber-500" },
+    { title: "Tổng thu nước sinh hoạt", amount: waterSum.toLocaleString('vi-VN'), ratio: waterRatio, color: "bg-cyan-500" },
   ];
 
   return (
@@ -42,7 +74,9 @@ export default function AdminAnalytics() {
               <MessageSquare className="w-5 h-5" />
               <span>Xử lý tranh chấp</span>
             </div>
-            <span className="bg-rose-500 text-white text-xs px-2 py-0.5 rounded-full font-bold">3</span>
+            {disputesCount > 0 && (
+              <span className="bg-rose-500 text-white text-xs px-2 py-0.5 rounded-full font-bold">{disputesCount}</span>
+            )}
           </button>
         </nav>
       </aside>
@@ -61,8 +95,8 @@ export default function AdminAnalytics() {
             <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex justify-between items-center">
               <div className="space-y-1.5">
                 <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">Tổng quỹ thu dự kiến</span>
-                <p className="text-3xl font-black text-slate-900">428,500,000 đ</p>
-                <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-lg inline-flex items-center gap-1"><TrendingUp className="w-3 h-3" /> Tăng 4.2%</span>
+                <p className="text-3xl font-black text-slate-900">{totalExpected.toLocaleString('vi-VN')} đ</p>
+                <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-lg inline-flex items-center gap-1"><TrendingUp className="w-3 h-3" /> Cập nhật tự động</span>
               </div>
               <div className="p-4 bg-emerald-50 text-emerald-600 rounded-2xl"><DollarSign className="w-6 h-6" /></div>
             </div>

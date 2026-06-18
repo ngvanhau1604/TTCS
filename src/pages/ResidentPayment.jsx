@@ -4,43 +4,122 @@ import {
   CreditCard, Wallet, QrCode, ArrowLeft, Download, 
   Droplet, Zap, Car, ShieldAlert, CheckCircle2, Info, Building, Check
 } from 'lucide-react';
+import { apiFetch } from '../utils/api';
 
 export default function ResidentPayment() {
   const navigate = useNavigate();
 
-  // SỬA TẠI ĐÂY: Khởi tạo giá trị ban đầu cho State bằng hàm đọc trực tiếp từ localStorage
-  const [invoice, setInvoice] = useState(() => {
-    const storedInvoice = localStorage.getItem('smartfee.invoice');
-    return storedInvoice ? JSON.parse(storedInvoice) : null;
-  });
-
+  const [invoice, setInvoice] = useState(null);
   const [invoiceStatus, setInvoiceStatus] = useState('unpaid'); // 'unpaid' | 'processing' | 'paid'
-  const [selectedMethod, setSelectedMethod] = useState('qr'); // 'qr' | 'vnpay' | 'momo'
+  const [selectedMethod, setSelectedMethod] = useState('vnpay'); // 'qr' | 'vnpay' | 'momo'
   const [isLoading, setIsLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-  // CÙNG SỬA: Xóa bỏ hoàn toàn block useEffect chạy lúc mount trước đó
+  // --- TẢI HÓA ĐƠN CHƯA THANH TOÁN ---
+  const loadInvoiceData = async () => {
+    try {
+      setLoading(true);
+      // 1. Lấy thông tin tài khoản
+      const user = await apiFetch('/api/auth/me');
+      
+      // 2. Tìm căn hộ của tài khoản này bằng apartmentCode trong profile của user
+      const apartments = await apiFetch('/api/apartments');
+      const myApartment = apartments.find(ap => ap.roomNumber.trim().toUpperCase() === user.apartmentCode?.trim().toUpperCase());
+      
+      if (myApartment) {
+        // 3. Tải hóa đơn của căn hộ
+        const invoices = await apiFetch(`/api/invoices?apartmentId=${myApartment.apartmentId}`);
+        const unpaid = invoices.find(inv => inv.status === 'PENDING' || inv.status === 'UNPAID' || inv.status === 'OVERDUE');
+        if (unpaid) {
+          setInvoice(unpaid);
+          if (unpaid.status === 'PAID') {
+            setInvoiceStatus('paid');
+          } else {
+            setInvoiceStatus('unpaid');
+          }
+        } else {
+          setInvoice(null);
+        }
+      } else {
+        setInvoice(null);
+      }
+    } catch (err) {
+      console.error("Lỗi tải thông tin hóa đơn:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadInvoiceData();
+  }, []);
+
   const feeDetails = invoice ? [
-    { id: 1, name: "Phí dịch vụ quản lý tòa nhà", desc: `Diện tích: ${invoice.area}m² x ${Number(invoice.managementFeeRate).toLocaleString('vi-VN')}đ/m²`, amount: invoice.calculatedFees.managementTotal, icon: Building, color: "text-blue-600 bg-blue-50" },
-    { id: 2, name: "Phí trông giữ xe", desc: "Theo dữ liệu dịch vụ tòa nhà", amount: 700000, icon: Car, color: "text-indigo-600 bg-indigo-50" },
-    { id: 3, name: "Tiền điện tiêu thụ", desc: `Chỉ số: ${invoice.electricityOld} → ${invoice.electricityNew}`, amount: invoice.calculatedFees.electricityTotal, icon: Zap, color: "text-amber-600 bg-amber-50" },
-    { id: 4, name: "Nước sinh hoạt", desc: `Chỉ số: ${invoice.waterOld} → ${invoice.waterNew}`, amount: invoice.calculatedFees.waterTotal, icon: Droplet, color: "text-cyan-600 bg-cyan-50" },
+    { id: 1, name: "Phí dịch vụ quản lý tòa nhà", desc: `Diện tích căn hộ: ${invoice.apartment?.area || 0}m²`, amount: Number(invoice.managementFee || 0), icon: Building, color: "text-blue-600 bg-blue-50" },
+    { id: 2, name: "Phí trông giữ xe", desc: `Xe máy: ${invoice.apartment?.motorbikeSlots || 0}, Ô tô: ${invoice.apartment?.carSlots || 0}`, amount: Number(invoice.parkingFee || 0), icon: Car, color: "text-indigo-600 bg-indigo-50" },
+    { id: 3, name: "Tiền điện tiêu thụ", desc: "Theo số công tơ ghi nhận điện", amount: Number(invoice.electricFee || 0), icon: Zap, color: "text-amber-600 bg-amber-50" },
+    { id: 4, name: "Nước sinh hoạt", desc: "Theo số mét khối nước tiêu thụ", amount: Number(invoice.waterFee || 0), icon: Droplet, color: "text-cyan-600 bg-cyan-50" },
   ] : [];
 
-  const totalAmount = feeDetails.reduce((sum, item) => sum + item.amount, 0);
+  const totalAmount = invoice ? Number(invoice.totalAmount || 0) : 0;
 
   // --- XỬ LÝ TẢI HÓA ĐƠN ĐIỆN TỬ ---
   const handleDownloadInvoice = () => {
-    alert("Hệ thống đang khởi tạo file PDF... Tải xuống thành công hóa đơn chi tiết căn hộ P102 (Tháng 05/2026).");
+    if (!invoice) return;
+    alert(`Đang tải biên lai chi tiết PDF của hóa đơn HĐ-${invoice.invoiceId} về thiết bị...`);
   };
 
-  // --- XỬ LÝ LỆNH THANH TOÁN ---
-  const handlePaymentSubmit = () => {
+  // --- XỬ LÝ THANH TOÁN ---
+  const handlePaymentSubmit = async () => {
+    if (!invoice) return;
     setIsLoading(true);
-    setTimeout(() => {
-      setIsLoading(false);
+    try {
+      // 1. Khởi tạo thanh toán trên backend
+      await apiFetch('/api/payments', {
+        method: 'POST',
+        body: JSON.stringify({
+          invoiceId: String(invoice.invoiceId),
+          method: selectedMethod.toUpperCase()
+        })
+      });
+
+      // 2. Chuyển trạng thái sang chờ duyệt/đối soát
       setInvoiceStatus('processing');
-    }, 1500);
+    } catch (err) {
+      alert("Lỗi khởi tạo thanh toán: " + err.message);
+    } finally {
+      setIsLoading(false);
+    }
   };
+
+  // --- GIẢ LẬP WEBHOOK THANH TOÁN THÀNH CÔNG ---
+  const handleMockPaySuccess = async () => {
+    if (!invoice) return;
+    setIsLoading(true);
+    try {
+      // Cư dân tự thanh toán (Đã cập nhật SecurityConfig cho phép RESIDENT gọi mark-paid)
+      await apiFetch(`/api/invoices/${invoice.invoiceId}/mark-paid`, {
+        method: 'POST'
+      });
+      setInvoiceStatus('paid');
+      alert("Simulated: Thanh toán hóa đơn thành công!");
+    } catch (err) {
+      alert("Lỗi khi giả lập thanh toán: " + err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center font-sans">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+          <p className="text-slate-600 font-bold text-xs uppercase tracking-wider">Đang tải cổng thanh toán...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 p-4 md:p-8 font-sans antialiased">
@@ -55,7 +134,9 @@ export default function ResidentPayment() {
           >
             <ArrowLeft className="w-4 h-4" /> Quay lại trang tổng quan
           </button>
-          <span className="text-xs text-slate-400 font-medium">Mã giao dịch: #SPF-202605</span>
+          <span className="text-xs text-slate-400 font-medium">
+            {invoice ? `Mã hóa đơn: HĐ-${invoice.invoiceId}` : 'Không có hóa đơn'}
+          </span>
         </div>
 
         {/* TIÊU ĐỀ CHÍNH */}
@@ -73,7 +154,7 @@ export default function ResidentPayment() {
               <div>
                 <h3 className="text-sm font-black text-slate-800 uppercase tracking-wide">Hóa Đơn Tổng Hợp</h3>
                 <p className="text-[11px] text-slate-400 font-medium mt-0.5">
-                  {invoice ? `Kỳ thanh toán: Tháng ${invoice.month}` : 'Chưa có hóa đơn từ BQL'}
+                  {invoice ? `Kỳ thanh toán: Tháng ${new Date(invoice.billingMonth).getMonth() + 1}/${new Date(invoice.billingMonth).getFullYear()}` : 'Chưa có hóa đơn từ BQL'}
                 </p>
               </div>
               
@@ -84,7 +165,7 @@ export default function ResidentPayment() {
                 title={invoice ? 'Tải hóa đơn PDF về máy' : 'Chờ BQL tạo hóa đơn'}
                 disabled={!invoice}
               >
-                <Download className="w-3.5 h-3.5" /> Tải về
+                <Download className="w-3.5 h-3.5" /> Biên lai
               </button>
             </div>
 
@@ -119,7 +200,7 @@ export default function ResidentPayment() {
 
             <div className="bg-slate-900 text-white p-5 flex justify-between items-center">
               <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Tổng cộng cần thanh toán</span>
-              <span className="text-lg font-black tracking-tight">{invoice ? totalAmount.toLocaleString('vi-VN') : '0'} đ</span>
+              <span className="text-lg font-black tracking-tight">{totalAmount.toLocaleString('vi-VN')} đ</span>
             </div>
           </div>
 
@@ -134,18 +215,8 @@ export default function ResidentPayment() {
                   <div className="mx-auto w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center">
                     <Info className="w-5 h-5 text-slate-400" />
                   </div>
-                  <p className="text-sm font-bold text-slate-900">Chưa có hóa đơn để thanh toán</p>
-                  <p className="text-[11px] text-slate-500 px-4">BQL chưa thực hiện chốt phí. Bạn sẽ thấy chi tiết khi admin bấm tính phí hoặc đến ngày tự động tính phí.</p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const storedInvoice = localStorage.getItem('smartfee.invoice');
-                      if (storedInvoice) setInvoice(JSON.parse(storedInvoice));
-                    }}
-                    className="mt-4 px-4 py-2 text-xs font-bold uppercase tracking-wider text-slate-700 bg-slate-100 rounded-full hover:bg-slate-200 transition-all"
-                  >
-                    Làm mới dữ liệu
-                  </button>
+                  <p className="text-sm font-bold text-slate-900">Không có hóa đơn nợ</p>
+                  <p className="text-[11px] text-slate-500 px-4">Bạn không có hóa đơn nào chưa đóng. Vui lòng kiểm tra lại sau khi BQL gửi thông báo mới.</p>
                 </div>
               ) : invoiceStatus === 'paid' ? (
                 /* Giao diện khi đã đóng tiền xong */
@@ -157,28 +228,35 @@ export default function ResidentPayment() {
                     <h4 className="text-xs font-black text-slate-900 uppercase">Đã hoàn tất thanh toán</h4>
                     <p className="text-[10px] text-slate-400 font-medium px-4">Hệ thống đã nhận đủ số tiền và gạch nợ trên hệ thống quản lý tòa nhà.</p>
                   </div>
+                  <button 
+                    type="button" 
+                    onClick={() => navigate('/resident/dashboard')}
+                    className="w-full mt-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold uppercase tracking-wider rounded-xl shadow-sm transition-all"
+                  >
+                    Về Trang Chủ Cư Dân
+                  </button>
                 </div>
               ) : invoiceStatus === 'processing' ? (
                 /* Giao diện chờ Ban quản lý đối soát lệnh duyệt tiền */
-                <div className="py-6 text-center space-y-4">
+                <div className="py-6 text-center space-y-4 animate-fadeIn">
                   <div className="w-12 h-12 bg-amber-50 text-amber-500 rounded-full flex items-center justify-center mx-auto animate-pulse">
                     <Info className="w-6 h-6" />
                   </div>
                   <div className="space-y-1">
                     <h4 className="text-xs font-black text-slate-900 uppercase">Đang chờ BQL đối soát tiền</h4>
                     <p className="text-[10px] text-amber-600 font-bold bg-amber-50 border border-amber-100 py-1.5 px-2 rounded-xl mx-2">
-                      Giao dịch của bạn đang được kiểm duyệt!
+                      Lệnh chuyển khoản đã được ghi nhận!
                     </p>
                     <p className="text-[10px] text-slate-400 font-medium px-2 pt-1 leading-relaxed">
-                      Vui lòng giữ lại biên lai chuyển khoản. Ban quản lý sẽ xác thực lệnh chuyển tiền trực tuyến trong ít phút.
+                      Để hoàn tất giao dịch tự động nhanh chóng cho môi trường thử nghiệm, bạn hãy click nút bên dưới để xác nhận đóng tiền thành công.
                     </p>
                   </div>
                   <button 
                     type="button" 
-                    onClick={() => setInvoiceStatus('paid')}
-                    className="text-[11px] font-bold text-blue-600 hover:underline flex items-center justify-center gap-1 mx-auto"
+                    onClick={handleMockPaySuccess}
+                    className="w-full mt-4 py-3 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white text-xs font-bold uppercase tracking-wider rounded-xl shadow-md transition-all flex items-center justify-center gap-2"
                   >
-                    <Check className="w-3.5 h-3.5" /> Giả lập BQL duyệt thành công
+                    <Check className="w-4 h-4" /> Xác nhận đã chuyển khoản
                   </button>
                 </div>
               ) : (
@@ -193,7 +271,7 @@ export default function ResidentPayment() {
                       <QrCode className="w-5 h-5 text-slate-700" />
                       <div>
                         <p className="text-xs font-bold text-slate-800">Quét mã QR Code</p>
-                        <p className="text-[10px] text-slate-400 font-medium">Cổng VietQR (Napas247)</p>
+                        <p className="text-[10px] text-slate-400 font-medium">VietQR chuyển khoản nhanh 247</p>
                       </div>
                     </div>
                     <input 
@@ -213,7 +291,7 @@ export default function ResidentPayment() {
                       <CreditCard className="w-5 h-5 text-slate-700" />
                       <div>
                         <p className="text-xs font-bold text-slate-800">Cổng Thẻ VNPAY</p>
-                        <p className="text-[10px] text-slate-400 font-medium">Thẻ ATM nội địa / Quốc tế</p>
+                        <p className="text-[10px] text-slate-400 font-medium">Thẻ ATM / Mobile Banking</p>
                       </div>
                     </div>
                     <input 
@@ -233,7 +311,7 @@ export default function ResidentPayment() {
                       <Wallet className="w-5 h-5 text-slate-700" />
                       <div>
                         <p className="text-xs font-bold text-slate-800">Ví Điện Tử MoMo</p>
-                        <p className="text-[10px] text-slate-400 font-medium">Thanh toán một chạm ứng dụng</p>
+                        <p className="text-[10px] text-slate-400 font-medium">Chuyển tiền nhanh qua app MoMo</p>
                       </div>
                     </div>
                     <input 

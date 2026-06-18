@@ -1,20 +1,82 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   Building2, LayoutDashboard, Users, BarChart3, MessageSquare, Calculator,
   Search, Plus, Filter, UserCheck, ShieldAlert, Mail, Phone, Home, X
 } from 'lucide-react';
+import { apiFetch, session } from '../utils/api';
 
 export default function AdminResidents() {
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
 
-  // State danh sách cư dân gốc
-  const [residents, setResidents] = useState([
-    { id: "RES-001", name: "Nguyễn Văn A", room: "P102", phone: "0901234567", email: "vana@gmail.com", status: "Paid", members: 3 },
-    { id: "RES-002", name: "Trần Thị B", room: "P504", phone: "0918888777", email: "thib@gmail.com", status: "Unpaid", members: 4 },
-    { id: "RES-003", name: "Lê Văn C", room: "P312", phone: "0987654321", email: "vanc@gmail.com", status: "Pending", members: 2 }
-  ]);
+  // Dữ liệu từ backend
+  const [apartments, setApartments] = useState([]);
+  const [invoices, setInvoices] = useState([]);
+  const [pendingRegistrations, setPendingRegistrations] = useState([]);
+  const [disputesCount, setDisputesCount] = useState(0);
+
+  // Hàm load dữ liệu
+  const loadData = async () => {
+    try {
+      const aptList = await apiFetch('/api/apartments');
+      setApartments(aptList);
+
+      const invList = await apiFetch('/api/invoices');
+      setInvoices(invList);
+
+      const pendingList = await apiFetch('/api/admin/registrations/pending');
+      setPendingRegistrations(pendingList);
+
+      const disputes = await apiFetch('/api/service-requests?status=PENDING');
+      setDisputesCount(disputes.length);
+    } catch (err) {
+      console.error("Lỗi tải thông tin cư dân:", err);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  // Xử lý Duyệt / Từ chối đăng ký cư dân
+  const handleApprove = async (userId) => {
+    if (!window.confirm("Bạn có chắc chắn muốn duyệt cư dân này?")) return;
+    try {
+      await apiFetch(`/api/admin/registrations/${userId}/approve`, { method: 'POST' });
+      alert("Đã duyệt đăng ký thành công!");
+      loadData();
+    } catch (err) {
+      alert("Duyệt thất bại: " + err.message);
+    }
+  };
+
+  const handleReject = async (userId) => {
+    if (!window.confirm("Bạn có chắc chắn muốn từ chối đăng ký này?")) return;
+    try {
+      await apiFetch(`/api/admin/registrations/${userId}/reject`, { method: 'POST' });
+      alert("Đã từ chối đăng ký thành công!");
+      loadData();
+    } catch (err) {
+      alert("Từ chối thất bại: " + err.message);
+    }
+  };
+
+  const residents = apartments
+    .filter(apt => apt.owner !== null)
+    .map(apt => {
+      const aptInvoices = invoices.filter(inv => inv.apartment?.apartmentId === apt.apartmentId);
+      const hasUnpaid = aptInvoices.some(inv => inv.status === 'PENDING' || inv.status === 'OVERDUE');
+      return {
+        id: `RES-${apt.apartmentId}`,
+        name: apt.owner.fullName || apt.owner.username,
+        room: apt.roomNumber,
+        phone: apt.owner.phoneNumber || 'N/A',
+        email: apt.owner.email || 'N/A',
+        status: hasUnpaid ? 'Unpaid' : 'Paid',
+        members: 1 // Default nhân khẩu là 1 cho chủ hộ
+      };
+    });
 
   // Trạng thái mở Form Modal
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -53,21 +115,57 @@ export default function AdminResidents() {
   };
 
   // Submit Form (Xử lý gộp cả Thêm & Sửa real-time)
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!residentForm.name || !residentForm.room) return;
 
     if (isEditMode) {
-      // Logic cập nhật cư dân cũ
-      setResidents(residents.map(r => r.id === currentId ? { ...r, ...residentForm, members: Number(residentForm.members) } : r));
+      try {
+        const aptId = Number(currentId.replace('RES-', ''));
+        const apt = apartments.find(a => a.apartmentId === aptId);
+        if (!apt || !apt.owner) {
+          alert("Không tìm thấy thông tin cư dân để cập nhật.");
+          return;
+        }
+
+        await apiFetch(`/api/admin/registrations/users/${apt.owner.userId}`, {
+          method: 'PUT',
+          body: JSON.stringify({
+            fullName: residentForm.name,
+            phoneNumber: residentForm.phone,
+            apartmentCode: residentForm.room
+          })
+        });
+        alert("Cập nhật thông tin cư dân thành công!");
+        loadData();
+      } catch (err) {
+        alert("Cập nhật thất bại: " + err.message);
+      }
     } else {
-      // Logic đẩy thêm cư dân mới
-      const newResident = {
-        id: `RES-00${residents.length + 1}`,
-        ...residentForm,
-        members: Number(residentForm.members)
-      };
-      setResidents([...residents, newResident]);
+      try {
+        const username = residentForm.phone.replace(/[^0-9]/g, '') || `user${Date.now()}`;
+        await apiFetch('/api/auth/register', {
+          method: 'POST',
+          body: JSON.stringify({
+            username,
+            password: 'password123',
+            fullName: residentForm.name,
+            phoneNumber: residentForm.phone,
+            apartmentCode: residentForm.room
+          })
+        });
+
+        // Tải danh sách đăng ký chờ duyệt, tìm và duyệt
+        const pendingList = await apiFetch('/api/admin/registrations/pending');
+        const newUser = pendingList.find(u => u.username === username);
+        if (newUser) {
+          await apiFetch(`/api/admin/registrations/${newUser.userId}/approve`, { method: 'POST' });
+        }
+        alert(`Thêm cư dân thành công!\nTài khoản đăng nhập: ${username}\nMật khẩu mặc định: password123`);
+        loadData();
+      } catch (err) {
+        alert("Thêm cư dân thất bại: " + err.message);
+      }
     }
     setIsFormOpen(false);
   };
@@ -99,7 +197,9 @@ export default function AdminResidents() {
               <MessageSquare className="w-5 h-5" />
               <span>Xử lý tranh chấp</span>
             </div>
-            <span className="bg-rose-500 text-white text-xs px-2 py-0.5 rounded-full font-bold">3</span>
+            {disputesCount > 0 && (
+              <span className="bg-rose-500 text-white text-xs px-2 py-0.5 rounded-full font-bold">{disputesCount}</span>
+            )}
           </button>
         </nav>
       </aside>
@@ -114,6 +214,34 @@ export default function AdminResidents() {
         </header>
 
         <main className="flex-1 overflow-y-auto p-6 space-y-4">
+          
+          {/* PHẦN DUYỆT ĐĂNG KÝ CƯ DÂN PENDING (CHỈ HIỂN THỊ KHI CÓ DỮ LIỆU) */}
+          {pendingRegistrations.length > 0 && (
+            <div className="bg-white rounded-2xl border border-amber-200 shadow-sm overflow-hidden mb-6">
+              <div className="p-5 border-b border-amber-100 bg-amber-50/50 flex items-center justify-between">
+                <h3 className="text-sm font-bold text-amber-800 flex items-center gap-2">
+                  <ShieldAlert className="w-5 h-5 text-amber-600 animate-pulse" />
+                  Yêu cầu đăng ký cư dân cần phê duyệt ({pendingRegistrations.length})
+                </h3>
+              </div>
+              <div className="p-4 space-y-3">
+                {pendingRegistrations.map((reg) => (
+                  <div key={reg.userId} className="flex flex-col sm:flex-row justify-between sm:items-center p-4 bg-slate-50 border border-slate-200 rounded-xl gap-4">
+                    <div>
+                      <p className="font-bold text-slate-900">{reg.fullName || reg.username}</p>
+                      <p className="text-xs text-slate-500">Tài khoản: {reg.username} | SĐT: {reg.phoneNumber || 'N/A'}</p>
+                      <p className="text-xs text-blue-600 font-semibold mt-1">Đăng ký Căn hộ: P{reg.apartmentCode}</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={() => handleApprove(reg.userId)} className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition-all">Duyệt</button>
+                      <button onClick={() => handleReject(reg.userId)} className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-lg transition-all">Từ chối</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="flex gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
             <div className="relative flex-1">
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />

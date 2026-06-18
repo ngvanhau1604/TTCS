@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Calculator, FileText, CheckCircle, AlertCircle, ArrowLeft, X } from 'lucide-react';
+import { apiFetch } from '../utils/api';
 
 export default function AdminFeeCalculation() {
   const navigate = useNavigate();
@@ -15,6 +16,20 @@ export default function AdminFeeCalculation() {
   const [notifications, setNotifications] = useState([]);
   const [isSaved, setIsSaved] = useState(false);
   const [error, setError] = useState('');
+  const [apartments, setApartments] = useState([]);
+
+  // Fetch danh sách căn hộ khi component mount
+  useEffect(() => {
+    async function loadApartments() {
+      try {
+        const list = await apiFetch('/api/apartments');
+        setApartments(list);
+      } catch (err) {
+        console.error("Lỗi tải danh sách căn hộ:", err);
+      }
+    }
+    loadApartments();
+  }, []);
 
   // SỬA TẠI ĐÂY: Thay thế state calculatedFees và useEffect bằng useMemo
   const calculatedFees = useMemo(() => {
@@ -45,7 +60,50 @@ export default function AdminFeeCalculation() {
     setError('');
   };
 
-  const handleGenerateInvoice = (e) => {
+  const handleApartmentSelect = async (e) => {
+    const roomNum = e.target.value;
+    const apt = apartments.find(a => a.roomNumber === roomNum);
+    
+    if (!apt) {
+      setFormData(prev => ({
+        ...prev,
+        apartmentNumber: '',
+        area: '75',
+        electricityOld: '',
+        waterOld: ''
+      }));
+      return;
+    }
+
+    let oldElec = '';
+    let oldWater = '';
+    try {
+      const readings = await apiFetch(`/api/meter-readings/apartment/${apt.apartmentId}`);
+      if (readings && readings.length > 0) {
+        // Sắp xếp các bản ghi để tìm chỉ số mới nhất
+        const sorted = [...readings].sort((a, b) => b.meterReadingId - a.meterReadingId);
+        const latest = sorted[0];
+        oldElec = latest.elecNew;
+        oldWater = latest.waterNew;
+      }
+    } catch (err) {
+      console.error("Lỗi khi tải chỉ số cũ của căn hộ:", err);
+    }
+
+    setFormData(prev => ({
+      ...prev,
+      apartmentNumber: roomNum,
+      area: String(apt.area || 75),
+      electricityOld: String(oldElec),
+      waterOld: String(oldWater),
+      electricityNew: '',
+      waterNew: ''
+    }));
+    setIsSaved(false);
+    setError('');
+  };
+
+  const handleGenerateInvoice = async (e) => {
     e.preventDefault();
     if (!formData.apartmentNumber.trim()) {
       setError('Vui lòng nhập số căn hộ để định danh phát hành.');
@@ -59,23 +117,44 @@ export default function AdminFeeCalculation() {
       setError('Chỉ số mới không được nhỏ hơn chỉ số cũ.');
       return;
     }
-    setIsSaved(true);
-    const niceMonth = formData.month;
-    const invoiceRecord = {
-      apartmentNumber: formData.apartmentNumber,
-      month: niceMonth,
-      note: formData.note || '',
-      area: formData.area,
-      managementFeeRate: formData.managementFeeRate,
-      electricityOld: formData.electricityOld,
-      electricityNew: formData.electricityNew,
-      waterOld: formData.waterOld,
-      waterNew: formData.waterNew,
-      calculatedFees,
-      createdAt: new Date().toISOString()
-    };
-    localStorage.setItem('smartfee.invoice', JSON.stringify(invoiceRecord));
-    addNotification('success', 'Khởi tạo hóa đơn', `Căn hộ ${formData.apartmentNumber} - Tháng ${niceMonth} đã khởi tạo. Cư dân sẽ thấy phí sau khi BQL đã chốt.`);
+
+    const apt = apartments.find(a => a.roomNumber === formData.apartmentNumber);
+    if (!apt) {
+      setError('Căn hộ không tồn tại trên hệ thống. Vui lòng kiểm tra lại.');
+      return;
+    }
+
+    const [year, month] = formData.month.split('-');
+    const displayMonth = `${month}/${year}`;
+
+    try {
+      // 1. Lưu chỉ số điện nước mới (Sử dụng apt.apartmentId chuẩn từ backend)
+      await apiFetch('/api/meter-readings', {
+        method: 'POST',
+        body: JSON.stringify({
+          apartmentId: apt.apartmentId,
+          monthYear: formData.month, // YYYY-MM
+          elecOld: Number(formData.electricityOld),
+          elecNew: Number(formData.electricityNew),
+          waterOld: Number(formData.waterOld),
+          waterNew: Number(formData.waterNew)
+        })
+      });
+
+      // 2. Kích hoạt tính phí tự động
+      await apiFetch('/api/invoices/admin/calc-fee', {
+        method: 'POST',
+        body: JSON.stringify({
+          month: Number(month),
+          year: Number(year)
+        })
+      });
+
+      setIsSaved(true);
+      addNotification('success', 'Tính phí thành công', `Căn hộ ${formData.apartmentNumber} - Tháng ${displayMonth} đã được lưu chỉ số và tính phí tự động thành công.`);
+    } catch (err) {
+      setError(err.message || 'Gặp lỗi trong quá trình lưu dữ liệu và tính phí.');
+    }
   };
 
   const addNotification = (type, title, message) => {
@@ -111,8 +190,20 @@ export default function AdminFeeCalculation() {
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-600">Mã Căn Hộ *</label>
-                <input type="text" name="apartmentNumber" placeholder="Ví dụ: P102" value={formData.apartmentNumber} onChange={handleChange} className="w-full px-3 py-2 border border-slate-200 bg-slate-50 rounded-xl text-sm font-semibold focus:bg-white" />
+                <label className="text-xs font-bold text-slate-600">Chọn Căn Hộ *</label>
+                <select
+                  name="apartmentNumber"
+                  value={formData.apartmentNumber}
+                  onChange={handleApartmentSelect}
+                  className="w-full px-3 py-2 border border-slate-200 bg-slate-50 rounded-xl text-sm font-semibold focus:bg-white"
+                >
+                  <option value="">-- Chọn Căn Hộ --</option>
+                  {apartments.map(apt => (
+                    <option key={apt.apartmentId} value={apt.roomNumber}>
+                      Căn {apt.roomNumber}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div className="space-y-1">
                 <label className="text-xs font-bold text-slate-600">Diện tích (m²)</label>
@@ -131,7 +222,7 @@ export default function AdminFeeCalculation() {
               </div>
             </div>
 
-            <div className="p-3.5 bg-amber-50/50 rounded-xl border border-amber-100/70 space-y-3">[cite: 2]
+            <div className="p-3.5 bg-amber-50/50 rounded-xl border border-amber-100/70 space-y-3">
               <span className="text-xs font-bold text-amber-800 uppercase tracking-wide block">Chỉ số Điện tiêu thụ (kWh)</span>
               <div className="grid grid-cols-2 gap-4">
                 <input type="number" name="electricityOld" placeholder="Chỉ số cũ" value={formData.electricityOld} onChange={handleChange} className="w-full px-3 py-1.5 border border-slate-200 bg-white rounded-lg text-sm" />
@@ -139,7 +230,7 @@ export default function AdminFeeCalculation() {
               </div>
             </div>
 
-            <div className="p-3.5 bg-cyan-50/50 rounded-xl border border-cyan-100/70 space-y-3">[cite: 2]
+            <div className="p-3.5 bg-cyan-50/50 rounded-xl border border-cyan-100/70 space-y-3">
               <span className="text-xs font-bold text-cyan-800 uppercase tracking-wide block">Chỉ số Nước sinh hoạt (m³)</span>
               <div className="grid grid-cols-2 gap-4">
                 <input type="number" name="waterOld" placeholder="Chỉ số cũ" value={formData.waterOld} onChange={handleChange} className="w-full px-3 py-1.5 border border-slate-200 bg-white rounded-lg text-sm" />

@@ -1,38 +1,84 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   Building2, LayoutDashboard, Users, BarChart3, MessageSquare, Calculator,
   CheckCircle, Clock, CornerUpRight, ShieldAlert
 } from 'lucide-react';
+import { apiFetch } from '../utils/api';
 
 export default function AdminDisputes() {
   const navigate = useNavigate();
 
-  // State danh sách khiếu nại để cập nhật trạng thái real-time
-  const [disputes, setDisputes] = useState([
-    { id: "DSP-101", room: "P102", title: "Thắc mắc chỉ số điện tăng đột biến", desc: "Tháng trước nhà tôi dùng 200 số, tháng này vọt lên 260 số điện, cần kỹ thuật kiểm tra lại công tơ.", status: "Pending", date: "01/06/2026" },
-    { id: "DSP-102", room: "P504", title: "Lỗi cổng thanh toán trừ tiền 2 lần", desc: "Tôi quét mã QR MoMo báo lỗi nhưng tài khoản ngân hàng vẫn bị trừ 1,200,000đ. Đã gửi ảnh biên lai.", status: "Processing", date: "31/05/2026" },
-    { id: "DSP-103", room: "P312", title: "Yêu cầu hoàn trả phí xe máy hủy đăng ký", desc: "Đã báo hủy xe máy số biển 70-G1 từ đầu tháng nhưng hóa đơn tháng 5 vẫn tính tiền gửi xe 100k.", status: "Pending", date: "29/05/2026" }
-  ]);
+  // Dữ liệu khiếu nại thật từ backend
+  const [disputes, setDisputes] = useState([]);
 
-  // Hành động Bác bỏ đơn đơn giản
-  const handleReject = (id) => {
-    setDisputes(disputes.map(item => item.id === id ? { ...item, status: 'Rejected' } : item));
-    alert(`Đã bác bỏ đơn khiếu nại ${id}.`);
+  const loadDisputes = async () => {
+    try {
+      const pendingList = await apiFetch('/api/service-requests?status=PENDING');
+      const processingList = await apiFetch('/api/service-requests?status=PROCESSING');
+      const resolvedList = await apiFetch('/api/service-requests?status=RESOLVED');
+      const rejectedList = await apiFetch('/api/service-requests?status=REJECTED');
+      
+      // Gộp chung tất cả các danh sách
+      setDisputes([...pendingList, ...processingList, ...resolvedList, ...rejectedList]);
+    } catch (err) {
+      console.error("Lỗi tải khiếu nại:", err);
+    }
   };
 
-  // LOGIC CHÍNH: Phản hồi xong tự động chuyển đổi sang trạng thái HOÀN THÀNH (Resolved)
-  const handleReplyAndResolve = (id, room) => {
+  useEffect(() => {
+    loadDisputes();
+  }, []);
+
+  // Ánh xạ dữ liệu sang giao diện hiển thị
+  const formattedDisputes = disputes.map(ticket => ({
+    id: `DSP-${ticket.requestId}`,
+    room: ticket.apartment?.roomNumber || 'N/A',
+    title: ticket.title,
+    desc: ticket.resolutionNote ? `${ticket.content}\n\n[BQL Phản hồi]: ${ticket.resolutionNote}` : ticket.content,
+    status: ticket.status === 'RESOLVED' ? 'Resolved' : 
+            ticket.status === 'REJECTED' ? 'Rejected' : 
+            ticket.status === 'PROCESSING' ? 'Processing' : 'Pending',
+    date: ticket.createdAt ? new Date(ticket.createdAt).toLocaleDateString('vi-VN') : 'N/A',
+    rawId: ticket.requestId
+  }));
+
+  // Hành động Bác bỏ đơn gửi về backend
+  const handleReject = async (id, rawId) => {
+    if (!window.confirm(`Xác nhận bác bỏ khiếu nại ${id}?`)) return;
+    try {
+      await apiFetch(`/api/service-requests/${rawId}/review`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          status: 'REJECTED',
+          note: 'Ban quản lý từ chối xử lý yêu cầu/khiếu nại này.'
+        })
+      });
+      alert(`Đã bác bỏ đơn khiếu nại ${id}.`);
+      loadDisputes();
+    } catch (err) {
+      alert("Lỗi khi bác bỏ đơn: " + err.message);
+    }
+  };
+
+  // Phản hồi và duyệt thành công hoàn thành
+  const handleReplyAndResolve = async (id, rawId, room) => {
     const replyMessage = prompt(`Nhập nội dung ban quản lý phản hồi gửi tới căn hộ ${room}:`);
     
-    // Nếu có nhập dữ liệu (không ấn cancel) thì kích hoạt đổi trạng thái luôn
     if (replyMessage && replyMessage.trim() !== '') {
-      setDisputes(disputes.map(item => 
-        item.id === id 
-          ? { ...item, status: 'Resolved', desc: `${item.desc}\n\n[BQL Phản hồi]: ${replyMessage}` } 
-          : item
-      ));
-      alert(`Đã gửi phản hồi! Đơn khiếu nại ${id} của căn hộ ${room} đã được tự động cập nhật sang trạng thái: ĐÃ GIẢI QUYẾT.`);
+      try {
+        await apiFetch(`/api/service-requests/${rawId}/review`, {
+          method: 'PUT',
+          body: JSON.stringify({
+            status: 'RESOLVED',
+            note: replyMessage
+          })
+        });
+        alert(`Đã gửi phản hồi! Đơn khiếu nại ${id} của căn hộ ${room} đã được cập nhật sang trạng thái: ĐÃ GIẢI QUYẾT.`);
+        loadDisputes();
+      } catch (err) {
+        alert("Lỗi khi phản hồi: " + err.message);
+      }
     }
   };
 
@@ -74,7 +120,11 @@ export default function AdminDisputes() {
               <MessageSquare className="w-5 h-5" />
               <span>Xử lý tranh chấp</span>
             </div>
-            <span className="bg-rose-500 text-white text-xs px-2 py-0.5 rounded-full font-bold">3</span>
+            {disputes.filter(d => d.status === 'PENDING').length > 0 && (
+              <span className="bg-rose-500 text-white text-xs px-2 py-0.5 rounded-full font-bold">
+                {disputes.filter(d => d.status === 'PENDING').length}
+              </span>
+            )}
           </button>
         </nav>
       </aside>
@@ -90,7 +140,7 @@ export default function AdminDisputes() {
 
         <main className="flex-1 overflow-y-auto p-6 space-y-4">
           <div className="space-y-4">
-            {disputes.map((ticket) => (
+            {formattedDisputes.map((ticket) => (
               <div key={ticket.id} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3 transition-all">
                 <div className="flex justify-between items-start flex-wrap gap-2">
                   <div className="space-y-0.5">
@@ -121,14 +171,14 @@ export default function AdminDisputes() {
                   <div className="flex justify-end gap-2 pt-1 animate-fadeIn">
                     <button 
                       type="button" 
-                      onClick={() => handleReject(ticket.id)}
+                      onClick={() => handleReject(ticket.id, ticket.rawId)}
                       className="flex items-center gap-1 px-3 py-1.5 border border-slate-200 text-slate-700 font-bold text-xs rounded-xl hover:bg-slate-50 transition-all"
                     >
                       Bác bỏ
                     </button>
                     <button 
                       type="button" 
-                      onClick={() => handleReplyAndResolve(ticket.id, ticket.room)}
+                      onClick={() => handleReplyAndResolve(ticket.id, ticket.rawId, ticket.room)}
                       className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white font-bold text-xs rounded-xl hover:bg-blue-700 transition-all"
                     >
                       <CornerUpRight className="w-3.5 h-3.5" />

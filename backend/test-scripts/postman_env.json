@@ -1,0 +1,11 @@
+{
+  "id": "smartfee-env",
+  "name": "SmartFee Env",
+  "values": [
+    { "key": "base_url", "value": "http://localhost:8080/api", "enabled": true },
+    { "key": "webhook_secret", "value": "test_secret", "enabled": true },
+    { "key": "auth_token", "value": "", "enabled": true },
+    { "key": "invoiceId", "value": "1", "enabled": true },
+    { "key": "transactionRef", "value": "", "enabled": true }
+  ]
+}
